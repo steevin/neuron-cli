@@ -1,42 +1,35 @@
-// Package styles defines the visual theme for the NeuronCLI TUI, including
-// color palettes and pre-built lipgloss styles for every UI component.
+// Package styles defines the visual theme for the NeuronCLI TUI.
 package styles
 
 import "github.com/charmbracelet/lipgloss"
 
-// Theme holds the complete set of colors and pre-built styles used throughout
-// the NeuronCLI TUI. Construct one via DarkTheme() or LightTheme().
+// Theme holds colors and pre-built lipgloss styles for every UI component.
 type Theme struct {
-	// ── Base palette ────────────────────────────────────────────────────────
-	Background lipgloss.Color // application background
-	Surface    lipgloss.Color // panel / card surfaces
-	Border     lipgloss.Color // border lines
-	Muted      lipgloss.Color // de-emphasised / secondary text
-	Text       lipgloss.Color // primary body text
-	TextBright lipgloss.Color // headings and highlighted text
+	Background lipgloss.Color
+	Surface    lipgloss.Color
+	Border     lipgloss.Color
+	Muted      lipgloss.Color
+	Text       lipgloss.Color
+	TextBright lipgloss.Color
 
-	// ── Accent palette ──────────────────────────────────────────────────────
 	Accent    lipgloss.Color // primary accent (blue)
 	AccentAlt lipgloss.Color // secondary accent (green)
 	Warning   lipgloss.Color
 	Error     lipgloss.Color
 
-	// ── Pre-built component styles ──────────────────────────────────────────
-	TitleBar        lipgloss.Style // full-width title bar
-	SidebarItem     lipgloss.Style // unselected sidebar list row
-	SidebarSelected lipgloss.Style // selected sidebar list row
-	Preview         lipgloss.Style // right-hand preview pane container
-	SearchBar       lipgloss.Style // search input bar
-	StatusBar       lipgloss.Style // bottom status bar
-	Tag             lipgloss.Style // inactive tag pill
-	TagSelected     lipgloss.Style // active / highlighted tag pill
-	Separator       lipgloss.Style // vertical / horizontal separator
-	KeyHint         lipgloss.Style // keybinding hint text, e.g. [q] quit
-	AppName         lipgloss.Style // application name in title bar
+	TitleBar        lipgloss.Style
+	SidebarItem     lipgloss.Style
+	SidebarSelected lipgloss.Style
+	Preview         lipgloss.Style
+	SearchBar       lipgloss.Style
+	StatusBar       lipgloss.Style
+	Tag             lipgloss.Style
+	TagSelected     lipgloss.Style
+	Separator       lipgloss.Style
+	KeyHint         lipgloss.Style
+	AppName         lipgloss.Style
 }
 
-// buildStyles populates all computed lipgloss.Style fields from a Theme whose
-// colour fields have already been set. It returns the fully-initialised Theme.
 func buildStyles(t Theme) *Theme {
 	t.TitleBar = lipgloss.NewStyle().
 		Bold(true).
@@ -99,7 +92,7 @@ func buildStyles(t Theme) *Theme {
 	return &t
 }
 
-// DarkTheme returns a Theme based on GitHub's dark palette.
+// DarkTheme returns a dark theme based on GitHub's dark palette.
 func DarkTheme() *Theme {
 	t := Theme{
 		Background: lipgloss.Color("#0d1117"),
@@ -116,7 +109,7 @@ func DarkTheme() *Theme {
 	return buildStyles(t)
 }
 
-// LightTheme returns a Theme based on GitHub's light palette.
+// LightTheme returns a light theme based on GitHub's light palette.
 func LightTheme() *Theme {
 	t := Theme{
 		Background: lipgloss.Color("#ffffff"),
@@ -133,8 +126,7 @@ func LightTheme() *Theme {
 	return buildStyles(t)
 }
 
-// GetTheme returns a *Theme by name. "dark" returns DarkTheme; anything else
-// (including "light") returns LightTheme.
+// GetTheme returns a *Theme by name; anything other than "dark" gets the light theme.
 func GetTheme(name string) *Theme {
 	if name == "dark" {
 		return DarkTheme()

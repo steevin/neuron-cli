@@ -6,17 +6,13 @@ import (
 	"strings"
 )
 
-// ---------------------------------------------------------------------------
-// Graph types
-// ---------------------------------------------------------------------------
-
 // GraphNode represents a single note in the link graph.
 type GraphNode struct {
-	Title     string   // Note title
-	Path      string   // Absolute path to the note file
-	Tags      []string // Tags on this note
-	Links     []string // Titles of notes this note links to
-	Backlinks []string // Titles of notes that link to this note
+	Title     string
+	Path      string
+	Tags      []string
+	Links     []string // outgoing [[wikilinks]]
+	Backlinks []string // notes that link to this one
 }
 
 // Graph is an in-memory bidirectional link graph built from a slice of Notes.
@@ -24,19 +20,12 @@ type Graph struct {
 	Nodes map[string]*GraphNode // keyed by note title
 }
 
-// ---------------------------------------------------------------------------
-// BuildGraph
-// ---------------------------------------------------------------------------
-
-// BuildGraph constructs a bidirectional link graph from a slice of parsed
-// notes. Each note becomes a node; forward links are copied from Note.Links,
-// and backlinks are computed as the reverse.
+// BuildGraph constructs a bidirectional link graph from a slice of notes.
 func BuildGraph(notes []*Note) *Graph {
 	g := &Graph{
 		Nodes: make(map[string]*GraphNode, len(notes)),
 	}
 
-	// First pass: create all nodes.
 	for _, n := range notes {
 		g.Nodes[n.Title] = &GraphNode{
 			Title: n.Title,
@@ -46,18 +35,14 @@ func BuildGraph(notes []*Note) *Graph {
 		}
 	}
 
-	// Second pass: populate backlinks.
 	for _, n := range notes {
 		for _, target := range n.Links {
 			if targetNode, ok := g.Nodes[target]; ok {
 				targetNode.Backlinks = append(targetNode.Backlinks, n.Title)
 			}
-			// If target doesn't exist as a node we still record the forward
-			// link on the source node, but we can't add a backlink.
 		}
 	}
 
-	// Sort backlinks for deterministic output.
 	for _, node := range g.Nodes {
 		sort.Strings(node.Backlinks)
 	}
@@ -65,12 +50,7 @@ func BuildGraph(notes []*Note) *Graph {
 	return g
 }
 
-// ---------------------------------------------------------------------------
-// Orphans
-// ---------------------------------------------------------------------------
-
-// Orphans returns all nodes that have no outgoing links AND no backlinks —
-// i.e. notes that are completely isolated in the graph.
+// Orphans returns nodes with no outgoing links and no backlinks.
 func (g *Graph) Orphans() []*GraphNode {
 	var orphans []*GraphNode
 	for _, node := range g.Nodes {
@@ -78,19 +58,14 @@ func (g *Graph) Orphans() []*GraphNode {
 			orphans = append(orphans, node)
 		}
 	}
-	// Sort for deterministic output.
 	sort.Slice(orphans, func(i, j int) bool {
 		return strings.ToLower(orphans[i].Title) < strings.ToLower(orphans[j].Title)
 	})
 	return orphans
 }
 
-// ---------------------------------------------------------------------------
-// MostConnected
-// ---------------------------------------------------------------------------
-
-// MostConnected returns the top `limit` nodes ranked by total connections
-// (len(Links) + len(Backlinks)). If limit ≤ 0 all nodes are returned.
+// MostConnected returns the top limit nodes by total connections (links + backlinks).
+// A limit ≤ 0 returns all nodes.
 func (g *Graph) MostConnected(limit int) []*GraphNode {
 	all := make([]*GraphNode, 0, len(g.Nodes))
 	for _, node := range g.Nodes {
@@ -112,23 +87,9 @@ func (g *Graph) MostConnected(limit int) []*GraphNode {
 	return all
 }
 
-// ---------------------------------------------------------------------------
-// RenderASCII
-// ---------------------------------------------------------------------------
-
-// RenderASCII renders a Unicode tree rooted at rootTitle, expanding outgoing
-// links up to depth levels deep. Cycles are detected and annotated with
-// "(↺ cycle)" rather than recursing infinitely.
-//
-// If rootTitle is not found in the graph, a summary of the whole graph is
-// rendered instead (total nodes, top connected nodes).
-//
-// Example output:
-//
-//	[Root Note]
-//	├──▶ [Linked Note 1]
-//	│    └──▶ [Deep Note]
-//	└──▶ [Linked Note 2]
+// RenderASCII renders a Unicode tree rooted at rootTitle up to depth levels deep.
+// Cycles are annotated with "(↺ cycle)". Falls back to a graph summary when
+// rootTitle is not found.
 func (g *Graph) RenderASCII(rootTitle string, depth int) string {
 	rootNode, exists := g.Nodes[rootTitle]
 	if !exists {
@@ -161,7 +122,6 @@ func (g *Graph) renderChildren(
 	for i, linkTitle := range node.Links {
 		isLast := i == len(node.Links)-1
 
-		// Choose connector characters.
 		connector := "├──▶ "
 		childPrefix := prefix + "│    "
 		if isLast {
@@ -176,7 +136,6 @@ func (g *Graph) renderChildren(
 
 		childNode, exists := g.Nodes[linkTitle]
 		if !exists {
-			// Link target not in vault — render as dead link.
 			sb.WriteString(fmt.Sprintf("%s%s[%s] (not in vault)\n", prefix, connector, linkTitle))
 			continue
 		}
@@ -186,8 +145,6 @@ func (g *Graph) renderChildren(
 	}
 }
 
-// renderSummary produces a brief overview when the requested root note is not
-// found in the graph.
 func (g *Graph) renderSummary() string {
 	var sb strings.Builder
 	sb.WriteString("(root note not found — graph summary)\n")

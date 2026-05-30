@@ -8,21 +8,14 @@ import (
 	"github.com/steevin/neuron-cli/internal/tui/styles"
 )
 
-// ── Messages ──────────────────────────────────────────────────────────────────
-
 // SearchQueryMsg is emitted when the user presses Enter in the search bar.
-// Listeners should filter the note list to entries matching Query.
 type SearchQueryMsg struct{ Query string }
 
-// SearchClearMsg is emitted when the user presses Escape in the search bar.
-// Listeners should restore the full, unfiltered note list.
+// SearchClearMsg is emitted when the user presses Escape; restores the full list.
 type SearchClearMsg struct{}
 
-// ── SearchPane ────────────────────────────────────────────────────────────────
-
-// SearchPane is the bottom-of-screen search input. When inactive it displays a
-// "/ to search" hint; when active it shows a text input that emits
-// SearchQueryMsg on Enter and SearchClearMsg on Escape.
+// SearchPane is the bottom search bar. Inactive it shows "/ to search";
+// active it captures input and emits SearchQueryMsg or SearchClearMsg.
 type SearchPane struct {
 	input  textinput.Model
 	theme  *styles.Theme
@@ -30,7 +23,7 @@ type SearchPane struct {
 	width  int
 }
 
-// NewSearchPane creates a SearchPane with a styled textinput ready to use.
+// NewSearchPane creates a SearchPane with a styled textinput.
 func NewSearchPane(theme *styles.Theme) SearchPane {
 	ti := textinput.New()
 	ti.Placeholder = "Search notes..."
@@ -47,14 +40,8 @@ func NewSearchPane(theme *styles.Theme) SearchPane {
 	}
 }
 
-// Init satisfies tea.Model. The search pane has no startup commands.
 func (s SearchPane) Init() tea.Cmd { return nil }
 
-// Update handles key events when the pane is active:
-//   - Enter → emit SearchQueryMsg with the current query value
-//   - Escape → clear input, deactivate, emit SearchClearMsg
-//
-// All other key events are forwarded to the underlying textinput.
 func (s SearchPane) Update(msg tea.Msg) (SearchPane, tea.Cmd) {
 	if !s.active {
 		return s, nil
@@ -84,8 +71,6 @@ func (s SearchPane) Update(msg tea.Msg) (SearchPane, tea.Cmd) {
 	return s, cmd
 }
 
-// View renders either the active text input or the inactive "/ to search" hint,
-// both styled consistently with the theme's status-bar appearance.
 func (s SearchPane) View() string {
 	containerStyle := s.theme.StatusBar.
 		Width(s.width)
@@ -103,8 +88,6 @@ func (s SearchPane) View() string {
 	return containerStyle.Render(hintStyle.Render("/ to search"))
 }
 
-// SetActive activates or deactivates the search input. Activating focuses the
-// textinput so keystrokes are captured; deactivating blurs it.
 func (s *SearchPane) SetActive(active bool) {
 	s.active = active
 	if active {
@@ -114,21 +97,17 @@ func (s *SearchPane) SetActive(active bool) {
 	}
 }
 
-// SetWidth updates the pane's rendering width in terminal columns.
 func (s *SearchPane) SetWidth(w int) {
 	s.width = w
-	// Leave a few columns of margin for the prompt glyph.
 	if w > 6 {
 		s.input.Width = w - 6
 	}
 }
 
-// Query returns the current text in the search input.
 func (s SearchPane) Query() string {
 	return s.input.Value()
 }
 
-// SetQuery sets the current text in the search input and puts the cursor at the end.
 func (s *SearchPane) SetQuery(q string) {
 	s.input.SetValue(q)
 	s.input.CursorEnd()

@@ -45,11 +45,8 @@ func NewEditor(theme *styles.Theme) Editor {
 	}
 }
 
-// Init satisfies tea.Model. The editor has no startup commands.
 func (e Editor) Init() tea.Cmd { return nil }
 
-// Update forwards scroll and mouse messages to the underlying viewport when
-// the editor is focused.
 func (e Editor) Update(msg tea.Msg) (Editor, tea.Cmd) {
 	if !e.focused {
 		return e, nil
@@ -59,9 +56,6 @@ func (e Editor) Update(msg tea.Msg) (Editor, tea.Cmd) {
 	return e, cmd
 }
 
-// View renders the editor pane: a header bar with title and metadata, followed
-// by the glamour-rendered markdown content in a scrollable viewport. When no
-// note is selected a centered empty-state prompt is shown instead.
 func (e Editor) View() string {
 	if e.note == nil {
 		return e.emptyState()
@@ -70,7 +64,6 @@ func (e Editor) View() string {
 	header := e.renderHeader()
 	content := e.viewport.View()
 
-	// Scroll percentage indicator in the bottom-right corner.
 	pct := fmt.Sprintf("  %d%%", int(e.viewport.ScrollPercent()*100))
 	scrollHint := lipgloss.NewStyle().
 		Foreground(e.theme.Muted).
@@ -82,8 +75,6 @@ func (e Editor) View() string {
 	return lipgloss.JoinVertical(lipgloss.Left, header, content, scrollHint)
 }
 
-// SetNote updates the displayed note and re-renders its markdown content into
-// the viewport. Passing nil clears the pane to the empty state.
 func (e *Editor) SetNote(note *notes.Note) {
 	e.note = note
 	if note == nil {
@@ -93,13 +84,10 @@ func (e *Editor) SetNote(note *notes.Note) {
 	e.refreshContent()
 }
 
-// SetSize resizes the viewport and recreates the glamour renderer at the new
-// word-wrap width so wrapped markdown always looks correct.
 func (e *Editor) SetSize(width, height int) {
 	e.width = width
 	e.height = height
 
-	// Reserve 3 rows: 1 header + 1 scroll hint + 1 border.
 	bodyHeight := height - 3
 	if bodyHeight < 1 {
 		bodyHeight = 1
@@ -107,7 +95,6 @@ func (e *Editor) SetSize(width, height int) {
 	e.viewport.Width = width
 	e.viewport.Height = bodyHeight
 
-	// Recreate the renderer at the new wrap width.
 	wrapWidth := width - 4
 	if wrapWidth < 20 {
 		wrapWidth = 20
@@ -119,22 +106,15 @@ func (e *Editor) SetSize(width, height int) {
 		e.renderer = r
 	}
 
-	// Re-render content at new width.
 	if e.note != nil {
 		e.refreshContent()
 	}
 }
 
-// SetFocused controls whether the editor receives scroll events and whether its
-// border is highlighted.
 func (e *Editor) SetFocused(focused bool) {
 	e.focused = focused
 }
 
-// ── Internal helpers ──────────────────────────────────────────────────────────
-
-// renderHeader builds the top bar showing the note title, last-updated date,
-// and tag pills.
 func (e *Editor) renderHeader() string {
 	titleStyle := lipgloss.NewStyle().
 		Bold(true).
