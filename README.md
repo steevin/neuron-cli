@@ -1,6 +1,6 @@
 <div align="center">
 
-# neuron
+# neuron-cli
 
 **A terminal knowledge manager that doesn't get in your way.**
 
