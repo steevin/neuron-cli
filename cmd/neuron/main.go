@@ -39,6 +39,25 @@ Features:
   • MCP server for seamless AI agent integration (Claude, GPT-4, …)
   • A buttery-smooth Bubble Tea TUI for keyboard-driven browsing
 
+Commands:
+  add <title>              Create a new note (--tag, --template)
+  edit <title|id>          Open a note in your configured editor
+  today                    Open or create today's daily note
+  list                     List notes (-q query, --tag, --limit)
+  rm <title|id>            Delete a note (--force to skip confirmation)
+  stats                    Show vault statistics (note count, tags, words)
+  open                     Open the vault folder in Finder
+  sync                     Sync vault with Git remote (--pull to fetch first)
+  tui                      Open the interactive full-screen TUI
+  mcp                      Start the MCP server for AI agent integration
+  config get <key>         Print a setting (vault_path, editor, theme, git_remote)
+  config set <key> <val>   Update a setting and save it to config.toml
+  version                  Print the build version
+
+Update:
+  Homebrew   brew upgrade steevin/tap/neuron
+  curl       curl -sSfL https://github.com/steevin/neuron-cli/releases/latest/download/neuron_$(uname -s)_$(uname -m).tar.gz | tar -xz -C /usr/local/bin neuron
+
 Run 'neuron help <command>' for detailed usage of any subcommand.`,
 	SilenceUsage: true,
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
