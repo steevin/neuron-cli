@@ -22,10 +22,6 @@ import (
 // version is injected at build time via -ldflags "-X main.version=<tag>".
 var version = "dev"
 
-// ---------------------------------------------------------------------------
-// Root command
-// ---------------------------------------------------------------------------
-
 var rootCmd = &cobra.Command{
 	Use:   "neuron",
 	Short: "🧠 Your second brain, from the terminal",
@@ -77,11 +73,6 @@ Run 'neuron help <command>' for detailed usage of any subcommand.`,
 	},
 }
 
-// ---------------------------------------------------------------------------
-// Subcommands
-// ---------------------------------------------------------------------------
-
-// addCmd creates a new note in the vault.
 var addCmd = &cobra.Command{
 	Use:   "add [title]",
 	Short: "Create a new note",
@@ -483,10 +474,6 @@ var versionCmd = &cobra.Command{
 	},
 }
 
-// ---------------------------------------------------------------------------
-// Flag registration
-// ---------------------------------------------------------------------------
-
 func init() {
 	// addCmd flags
 	addCmd.Flags().Bool("from-clipboard", false, "Populate note body from clipboard contents")
@@ -508,10 +495,6 @@ func init() {
 	// mcpCmd flags
 	mcpCmd.Flags().String("vault", "", "Override vault path for this session")
 }
-
-// ---------------------------------------------------------------------------
-// Wiring & entry point
-// ---------------------------------------------------------------------------
 
 func main() {
 	// Wire config sub-subcommands.

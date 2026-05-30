@@ -1,6 +1,5 @@
-// Package tui is the entry point for the NeuronCLI terminal user interface.
-// It wires together the sidebar, editor, and search pane into a single
-// Bubble Tea MVU application with a three-column layout.
+// Package tui wires the sidebar, editor, and search pane into a Bubble Tea
+// MVU application.
 package tui
 
 import (
@@ -20,8 +19,6 @@ import (
 	"github.com/steevin/neuron-cli/internal/tui/styles"
 )
 
-// ── Focus enumeration ─────────────────────────────────────────────────────────
-
 // focus identifies which pane currently has keyboard focus.
 type focus int
 
@@ -30,8 +27,6 @@ const (
 	focusEditor
 	focusSearch
 )
-
-// ── Internal message types ────────────────────────────────────────────────────
 
 // notesLoadedMsg is dispatched when the initial note scan completes.
 type notesLoadedMsg struct{ notes []*notes.Note }
@@ -42,10 +37,8 @@ type errMsg struct{ err error }
 // statusMsg carries a transient human-readable status update.
 type statusMsg struct{ msg string }
 
-// ── Model ─────────────────────────────────────────────────────────────────────
-
-// Model is the root Bubble Tea model for NeuronCLI. It owns all child pane
-// models and orchestrates focus, layout, and data flow between them.
+// Model is the root Bubble Tea model. It owns all child pane models and
+// orchestrates focus, layout, and data flow.
 type Model struct {
 	cfg       *config.Config
 	store     *notes.Store
@@ -89,10 +82,7 @@ func New(cfg *config.Config) (*Model, error) {
 	}, nil
 }
 
-// ── Init ──────────────────────────────────────────────────────────────────────
-
-// Init returns a command that loads notes from the store in the background and
-// dispatches a notesLoadedMsg when done.
+// Init loads notes from the store in the background.
 func (m Model) Init() tea.Cmd {
 	return func() tea.Msg {
 		noteList, err := m.store.List(notes.ListOptions{})
@@ -103,38 +93,30 @@ func (m Model) Init() tea.Cmd {
 	}
 }
 
-// ── Update ────────────────────────────────────────────────────────────────────
-
-// Update is the Bubble Tea message handler. It routes system messages (resize,
-// loaded data) and user key events to the appropriate handlers.
+// Update is the Bubble Tea message handler.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
 
-	// ── Terminal resize ──────────────────────────────────────────────────────
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
 		m.ready = true
 		m.layout()
 
-	// ── Notes loaded from store ──────────────────────────────────────────────
 	case notesLoadedMsg:
 		m.allNotes = msg.notes
 		m.sidebar.SetNotes(msg.notes)
 		m.statusMsg = fmt.Sprintf("Loaded %d notes", len(msg.notes))
 
-	// ── Error propagation ────────────────────────────────────────────────────
 	case errMsg:
 		m.err = msg.err
 		m.statusMsg = "Error: " + msg.err.Error()
 
-	// ── Transient status updates ─────────────────────────────────────────────
 	case statusMsg:
 		m.statusMsg = msg.msg
 
-	// ── Search pane messages ─────────────────────────────────────────────────
 	case panes.SearchQueryMsg:
 		if strings.HasPrefix(msg.Query, "/") {
 			m.setFocus(focusSidebar)
@@ -152,7 +134,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.sidebar.SetNotes(m.allNotes)
 		m.setFocus(focusSidebar)
 
-	// ── Key events ───────────────────────────────────────────────────────────
 	case tea.KeyMsg:
 		// Global shortcuts that work regardless of focus.
 		switch msg.String() {
@@ -243,9 +224,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
-// ── View ──────────────────────────────────────────────────────────────────────
-
-// View renders the full three-pane layout:
+// View renders the full three-pane layout.
 //
 //	┌──────────────────────────────────────────────────────────┐
 //	│  🧠 neuron                      [?] help  [q] quit       │
@@ -276,10 +255,7 @@ func (m Model) View() string {
 	)
 }
 
-// ── Layout ────────────────────────────────────────────────────────────────────
-
-// layout recomputes and pushes dimensions to all child panes whenever the
-// terminal is resized.
+// layout recomputes and pushes dimensions to all child panes on resize.
 func (m *Model) layout() {
 	// Subtract 2 rows: 1 title bar + 1 status bar.
 	bodyHeight := m.height - 2
@@ -306,8 +282,6 @@ func (m *Model) setFocus(f focus) {
 	m.editor.SetFocused(f == focusEditor)
 	m.search.SetActive(f == focusSearch)
 }
-
-// ── Title & status bars ───────────────────────────────────────────────────────
 
 func (m Model) renderTitleBar() string {
 	leftStyle := m.theme.AppName.Background(m.theme.Surface)
@@ -430,10 +404,7 @@ func (m *Model) handlePaletteCommand(cmdStr string) tea.Cmd {
 	}
 }
 
-// ── Commands & actions ────────────────────────────────────────────────────────
-
-// openInEditor opens the currently selected note in the user's $EDITOR (or the
-// editor set in config) and returns a tea.Cmd that resumes the TUI afterwards.
+// openInEditor opens the currently selected note in the configured editor.
 func (m *Model) openInEditor() tea.Cmd {
 	note := m.sidebar.SelectedNote()
 	if note == nil {
@@ -443,10 +414,13 @@ func (m *Model) openInEditor() tea.Cmd {
 
 	editor := m.cfg.Editor
 	if editor == "" {
-		editor = os.Getenv("EDITOR")
-	}
-	if editor == "" {
-		editor = "vi"
+		if e := os.Getenv("EDITOR"); e != "" {
+			editor = e
+		} else if e := os.Getenv("VISUAL"); e != "" {
+			editor = e
+		} else {
+			editor = "vi"
+		}
 	}
 
 	return tea.ExecProcess(exec.Command(editor, note.Path), func(err error) tea.Msg {
@@ -457,8 +431,7 @@ func (m *Model) openInEditor() tea.Cmd {
 	})
 }
 
-// syncCmd returns a command that triggers a git sync via gitsync.Syncer and
-// reports the result back via statusMsg or errMsg.
+// syncCmd triggers a git sync and reports the result via statusMsg or errMsg.
 func (m *Model) syncCmd() tea.Cmd {
 	vaultPath := m.cfg.VaultPath
 	remote := m.cfg.GitRemote
@@ -539,10 +512,7 @@ func helpText() string {
 	return "[tab] focus  [/] search  [n] new  [e] edit  [s] sync  [g] graph  [?] help  [q] quit"
 }
 
-// ── Run ───────────────────────────────────────────────────────────────────────
-
-// Run is the package-level entry point. It constructs the root model and starts
-// the Bubble Tea program with alt-screen and mouse support enabled.
+// Run constructs the root model and starts the Bubble Tea program.
 func Run(cfg *config.Config) error {
 	m, err := New(cfg)
 	if err != nil {

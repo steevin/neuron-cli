@@ -12,16 +12,8 @@ import (
 	"github.com/google/uuid"
 )
 
-// ---------------------------------------------------------------------------
-// Sentinel errors
-// ---------------------------------------------------------------------------
-
-// ErrNoteNotFound is returned when a note cannot be located by ID or title.
+// ErrNoteNotFound is returned when Get cannot locate a note by ID or title.
 var ErrNoteNotFound = fmt.Errorf("note not found")
-
-// ---------------------------------------------------------------------------
-// ListOptions
-// ---------------------------------------------------------------------------
 
 // ListOptions controls filtering, sorting, and pagination for Store.List.
 type ListOptions struct {
@@ -30,10 +22,6 @@ type ListOptions struct {
 	Limit  int      // Maximum number of results; 0 means no limit
 	SortBy string   // "updated" (default), "created", or "title"
 }
-
-// ---------------------------------------------------------------------------
-// Store
-// ---------------------------------------------------------------------------
 
 // Store is a file-based note store rooted at a vault directory.
 type Store struct {
@@ -69,13 +57,9 @@ func NewStore(vaultPath string) (*Store, error) {
 	}, nil
 }
 
-// ---------------------------------------------------------------------------
-// Create
-// ---------------------------------------------------------------------------
-
-// Create creates a new note with the given title, tags, and body content.
-// It generates a UUID, derives a safe filename from the title, writes the file,
-// and returns the populated Note.
+// Create writes a new note with the given title, tags, and body content.
+// It generates a UUID, derives a safe filename from the title, and returns
+// the populated Note.
 func (s *Store) Create(title string, tags []string, content string) (*Note, error) {
 	id := uuid.New().String()
 	filename := safeFilename(title) + ".md"
@@ -108,10 +92,6 @@ func (s *Store) Create(title string, tags []string, content string) (*Note, erro
 
 	return note, nil
 }
-
-// ---------------------------------------------------------------------------
-// Get
-// ---------------------------------------------------------------------------
 
 // Get retrieves a note by UUID (exact match), then by title (case-insensitive),
 // then by filename stem. Returns ErrNoteNotFound when no match exists.
@@ -148,12 +128,8 @@ func (s *Store) Get(idOrTitle string) (*Note, error) {
 	return nil, ErrNoteNotFound
 }
 
-// ---------------------------------------------------------------------------
-// List
-// ---------------------------------------------------------------------------
-
-// List walks the vault directory, parses every .md file it finds, applies the
-// filters specified in opts, sorts the results, and returns the slice.
+// List walks the vault, parses every .md file, applies opts filters,
+// sorts, and returns the resulting slice.
 func (s *Store) List(opts ListOptions) ([]*Note, error) {
 	var notes []*Note
 
@@ -201,7 +177,6 @@ func (s *Store) List(opts ListOptions) ([]*Note, error) {
 		return nil, fmt.Errorf("notes: walking vault %q: %w", s.VaultPath, err)
 	}
 
-	// ---------------------------------------------------------------- filter
 	filtered := make([]*Note, 0, len(notes))
 	for _, n := range notes {
 		if !matchesListOptions(n, opts) {
@@ -210,10 +185,8 @@ func (s *Store) List(opts ListOptions) ([]*Note, error) {
 		filtered = append(filtered, n)
 	}
 
-	// ------------------------------------------------------------------ sort
 	sortNotes(filtered, opts.SortBy)
 
-	// ----------------------------------------------------------------- limit
 	if opts.Limit > 0 && len(filtered) > opts.Limit {
 		filtered = filtered[:opts.Limit]
 	}
@@ -221,11 +194,7 @@ func (s *Store) List(opts ListOptions) ([]*Note, error) {
 	return filtered, nil
 }
 
-// ---------------------------------------------------------------------------
-// Update
-// ---------------------------------------------------------------------------
-
-// Update sets note.Updated to the current time and rewrites the note's file.
+// Update sets note.Updated to now and rewrites the file.
 func (s *Store) Update(note *Note) error {
 	note.Updated = time.Now()
 	note.RawContent = ToMarkdown(note)
@@ -236,12 +205,7 @@ func (s *Store) Update(note *Note) error {
 	return nil
 }
 
-// ---------------------------------------------------------------------------
-// Delete
-// ---------------------------------------------------------------------------
-
-// Delete moves the note identified by idOrTitle to the vault's .trash folder
-// instead of permanently removing it.
+// Delete moves the note to the vault's .trash folder instead of wiping it.
 func (s *Store) Delete(idOrTitle string) error {
 	note, err := s.Get(idOrTitle)
 	if err != nil {
@@ -266,12 +230,7 @@ func (s *Store) Delete(idOrTitle string) error {
 	return nil
 }
 
-// ---------------------------------------------------------------------------
-// Count
-// ---------------------------------------------------------------------------
-
-// Count returns the total number of .md files in the vault (excluding system
-// folders).
+// Count returns the number of .md files in the vault (system dirs excluded).
 func (s *Store) Count() (int, error) {
 	notes, err := s.List(ListOptions{})
 	if err != nil {
@@ -280,11 +239,7 @@ func (s *Store) Count() (int, error) {
 	return len(notes), nil
 }
 
-// ---------------------------------------------------------------------------
-// Tags
-// ---------------------------------------------------------------------------
-
-// Tags returns a map of tag name → number of notes that carry that tag.
+// Tags returns a map of tag → note count.
 func (s *Store) Tags() (map[string]int, error) {
 	notes, err := s.List(ListOptions{})
 	if err != nil {
@@ -300,12 +255,8 @@ func (s *Store) Tags() (map[string]int, error) {
 	return counts, nil
 }
 
-// ---------------------------------------------------------------------------
-// Internal helpers
-// ---------------------------------------------------------------------------
-
-// safeFilename converts a note title into a safe, lowercase, hyphen-separated
-// filename stem (max 80 characters).
+// safeFilename converts a title into a lowercase, hyphen-separated filename
+// stem capped at 80 characters.
 func safeFilename(title string) string {
 	var sb strings.Builder
 	prevHyphen := false

@@ -11,32 +11,22 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-// AIConfig holds settings for the AI/embedding provider used by NeuronCLI.
+// AIConfig holds AI/embedding provider settings.
 type AIConfig struct {
-	// Enabled controls whether AI-powered features (search, tagging, MCP) are active.
-	Enabled bool `toml:"enabled"`
-	// Provider selects the backend: "ollama", "openai", or "none".
-	Provider string `toml:"provider"`
-	// Model is the embedding or chat model name to use.
-	Model string `toml:"model"`
-	// OpenAIKey is the API key for the OpenAI provider (leave empty when using Ollama).
-	OpenAIKey string `toml:"openai_key"`
-	// OllamaURL is the base URL of a running Ollama instance.
+	Enabled   bool   `toml:"enabled"`
+	Provider  string `toml:"provider"`   // "ollama", "openai", or "none"
+	Model     string `toml:"model"`
+	OpenAIKey string `toml:"openai_key"` // leave empty when using Ollama
 	OllamaURL string `toml:"ollama_url"`
 }
 
-// Config is the top-level NeuronCLI configuration structure.
+// Config is the top-level NeuronCLI configuration.
 type Config struct {
-	// VaultPath is the absolute path to the Markdown vault directory.
-	VaultPath string `toml:"vault_path"`
-	// Editor is the command used to open notes (e.g. "vim", "code", "nano").
-	Editor string `toml:"editor"`
-	// Theme controls the TUI colour scheme: "dark" or "light".
-	Theme string `toml:"theme"`
-	// GitRemote is the remote name or URL used by `neuron sync`.
-	GitRemote string `toml:"git_remote"`
-	// AI contains all AI/embedding provider settings.
-	AI AIConfig `toml:"ai"`
+	VaultPath string    `toml:"vault_path"`
+	Editor    string    `toml:"editor"`     // command used to open notes (e.g. "nvim", "code")
+	Theme     string    `toml:"theme"`      // "dark" or "light"
+	GitRemote string    `toml:"git_remote"`
+	AI        AIConfig  `toml:"ai"`
 }
 
 // DefaultConfig returns a Config populated with sensible out-of-the-box values.

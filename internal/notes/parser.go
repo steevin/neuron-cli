@@ -1,6 +1,5 @@
-// Package notes is the core data layer for NeuronCLI. It provides the Note
-// type, parsing utilities, an Obsidian-vault detector, a file-based Store, and
-// a link graph. All other packages import from here.
+// Package notes is the core data layer: Note type, parser, Obsidian vault
+// detector, file store, and link graph.
 package notes
 
 import (
@@ -15,28 +14,13 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// ---------------------------------------------------------------------------
-// Compiled regular expressions
-// ---------------------------------------------------------------------------
-
 var (
 	// wikilinkRe matches [[target]] and [[target|display]] forms.
 	wikilinkRe = regexp.MustCompile(`\[\[([^\]|]+)(?:\|[^\]]*)?\]\]`)
-
-	// inlineTagRe matches #tag patterns that start at a word boundary.
-	// Tag names must start with a letter.
 	inlineTagRe = regexp.MustCompile(`(?:^|\s)#([a-zA-Z][a-zA-Z0-9_/-]*)`)
-
-	// blockRefRe matches Obsidian block-reference IDs: ^blockid
-	blockRefRe = regexp.MustCompile(`\^([a-zA-Z0-9-]+)`)
-
-	// h1Re matches the first ATX-style H1 heading in a document.
-	h1Re = regexp.MustCompile(`(?m)^#\s+(.+)$`)
+	blockRefRe  = regexp.MustCompile(`\^([a-zA-Z0-9-]+)`)
+	h1Re        = regexp.MustCompile(`(?m)^#\s+(.+)$`)
 )
-
-// ---------------------------------------------------------------------------
-// Note — the shared data type used by ALL packages
-// ---------------------------------------------------------------------------
 
 // Note represents a single markdown note in the vault.
 type Note struct {
@@ -58,11 +42,7 @@ type Note struct {
 	Extra map[string]interface{} // Extra frontmatter fields preserved
 }
 
-// ---------------------------------------------------------------------------
-// ParseFile
-// ---------------------------------------------------------------------------
-
-// ParseFile reads the markdown file at path and returns a fully populated Note.
+// ParseFile reads the markdown file at path and returns a populated Note.
 func ParseFile(path string) (*Note, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -75,13 +55,8 @@ func ParseFile(path string) (*Note, error) {
 	return note, nil
 }
 
-// ---------------------------------------------------------------------------
-// ParseContent
-// ---------------------------------------------------------------------------
-
-// ParseContent parses raw markdown content (with optional YAML frontmatter)
-// and returns a Note. path is the absolute path to the source file; it is used
-// to derive the filename-based title fallback and to set Note.Path.
+// ParseContent parses raw markdown (with optional YAML frontmatter) and
+// returns a Note. path is used for title fallback and Note.Path.
 func ParseContent(raw string, path string) (*Note, error) {
 	fm, body, err := ParseFrontmatter(raw)
 	if err != nil {
@@ -98,9 +73,6 @@ func ParseContent(raw string, path string) (*Note, error) {
 	// ------------------------------------------------------------------ ID
 	note.ID = stringField(fm, "id")
 	if note.ID == "" {
-		// generate a new UUID-like string without importing uuid here
-		// (uuid is imported in store.go; here we fall back to a deterministic
-		// placeholder that store.go overwrites when creating new notes).
 		note.ID = generatePlaceholderID()
 	}
 	delete(fm, "id")
@@ -162,13 +134,8 @@ func ParseContent(raw string, path string) (*Note, error) {
 	return note, nil
 }
 
-// ---------------------------------------------------------------------------
-// ParseFrontmatter
-// ---------------------------------------------------------------------------
-
-// ParseFrontmatter splits a raw markdown string into its YAML frontmatter map
-// and body. If no frontmatter delimiters are found, it returns an empty map
-// and the full content as body.
+// ParseFrontmatter splits raw markdown into a YAML frontmatter map and body.
+// Returns an empty map and the full content when no frontmatter is present.
 func ParseFrontmatter(raw string) (frontmatter map[string]interface{}, body string, err error) {
 	frontmatter = make(map[string]interface{})
 
@@ -224,13 +191,8 @@ func ParseFrontmatter(raw string) (frontmatter map[string]interface{}, body stri
 	return frontmatter, body, nil
 }
 
-// ---------------------------------------------------------------------------
-// ExtractWikilinks
-// ---------------------------------------------------------------------------
-
-// ExtractWikilinks returns all [[wikilink]] targets found in content.
+// ExtractWikilinks returns deduplicated [[wikilink]] targets from content.
 // For [[target|display]] only the target part is returned.
-// Results are deduplicated.
 func ExtractWikilinks(content string) []string {
 	matches := wikilinkRe.FindAllStringSubmatch(content, -1)
 	seen := make(map[string]struct{}, len(matches))
@@ -248,12 +210,8 @@ func ExtractWikilinks(content string) []string {
 	return out
 }
 
-// ---------------------------------------------------------------------------
-// ExtractInlineTags
-// ---------------------------------------------------------------------------
-
-// ExtractInlineTags finds #tag patterns in content that are NOT inside fenced
-// code blocks or URLs. Returns deduplicated tag names without the leading '#'.
+// ExtractInlineTags finds #tag patterns outside fenced code blocks and URLs.
+// Returns deduplicated tag names without the leading '#'.
 func ExtractInlineTags(content string) []string {
 	// Strip fenced code blocks first so we don't match tags inside them.
 	stripped := removeCodeBlocks(content)
@@ -271,13 +229,8 @@ func ExtractInlineTags(content string) []string {
 	return out
 }
 
-// ---------------------------------------------------------------------------
-// ToMarkdown
-// ---------------------------------------------------------------------------
-
-// ToMarkdown serializes a Note back to a markdown string with YAML frontmatter.
-// Frontmatter always includes: id, title, tags, created, updated.
-// All Extra fields are also written to frontmatter.
+// ToMarkdown serializes a Note to markdown with YAML frontmatter.
+// Always includes id, title, tags, created, updated plus any Extra fields.
 func ToMarkdown(note *Note) string {
 	fm := make(map[string]interface{})
 
@@ -320,12 +273,8 @@ func ToMarkdown(note *Note) string {
 	return sb.String()
 }
 
-// ---------------------------------------------------------------------------
-// Internal helpers
-// ---------------------------------------------------------------------------
-
-// generatePlaceholderID returns a time-stamped placeholder ID.
-// The real UUID is assigned in store.go using github.com/google/uuid.
+// generatePlaceholderID returns a time-stamped fallback ID.
+// The real UUID is assigned in store.go.
 func generatePlaceholderID() string {
 	return fmt.Sprintf("note-%d", time.Now().UnixNano())
 }
