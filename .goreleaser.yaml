@@ -27,11 +27,11 @@ archives:
 
 brews:
   - repository:
-      owner: danielsteevin
+      owner: steevin
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     directory: Formula
-    homepage: "https://github.com/danielsteevin/neuron-cli"
+    homepage: "https://github.com/steevin/neuron-cli"
     description: "🧠 Your second brain, from the terminal. Obsidian-compatible + AI + MCP."
     test: |
       system "#{bin}/neuron version"

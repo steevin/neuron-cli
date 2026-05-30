@@ -1,7 +1,7 @@
 GO := /opt/homebrew/bin/go
 BINARY := neuron
 BIN_DIR := bin
-MODULE := github.com/danielsteevin/neuron-cli
+MODULE := github.com/steevin/neuron-cli
 MAIN := ./cmd/neuron
 
 .PHONY: all build clean test lint run install help

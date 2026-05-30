@@ -10,12 +10,12 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/danielsteevin/neuron-cli/internal/config"
-	"github.com/danielsteevin/neuron-cli/internal/mcp"
-	"github.com/danielsteevin/neuron-cli/internal/notes"
-	"github.com/danielsteevin/neuron-cli/internal/search"
-	gitsync "github.com/danielsteevin/neuron-cli/internal/sync"
-	"github.com/danielsteevin/neuron-cli/internal/tui"
+	"github.com/steevin/neuron-cli/internal/config"
+	"github.com/steevin/neuron-cli/internal/mcp"
+	"github.com/steevin/neuron-cli/internal/notes"
+	"github.com/steevin/neuron-cli/internal/search"
+	gitsync "github.com/steevin/neuron-cli/internal/sync"
+	"github.com/steevin/neuron-cli/internal/tui"
 	"github.com/spf13/cobra"
 )
 

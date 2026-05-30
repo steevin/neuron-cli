@@ -9,8 +9,8 @@ import (
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/danielsteevin/neuron-cli/internal/notes"
-	"github.com/danielsteevin/neuron-cli/internal/tui/styles"
+	"github.com/steevin/neuron-cli/internal/notes"
+	"github.com/steevin/neuron-cli/internal/tui/styles"
 )
 
 // Editor is the right-hand preview pane. It renders the selected note's

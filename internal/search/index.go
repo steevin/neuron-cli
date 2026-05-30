@@ -9,7 +9,7 @@ import (
 	"sync"
 	"unicode"
 
-	"github.com/danielsteevin/neuron-cli/internal/notes"
+	"github.com/steevin/neuron-cli/internal/notes"
 )
 
 // stopWords are common English words excluded from the index.

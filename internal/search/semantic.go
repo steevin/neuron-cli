@@ -6,8 +6,8 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/danielsteevin/neuron-cli/internal/config"
-	"github.com/danielsteevin/neuron-cli/internal/notes"
+	"github.com/steevin/neuron-cli/internal/config"
+	"github.com/steevin/neuron-cli/internal/notes"
 	"github.com/philippgille/chromem-go"
 )
 

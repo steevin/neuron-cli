@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/danielsteevin/neuron-cli/internal/config"
-	"github.com/danielsteevin/neuron-cli/internal/notes"
-	"github.com/danielsteevin/neuron-cli/internal/search"
+	"github.com/steevin/neuron-cli/internal/config"
+	"github.com/steevin/neuron-cli/internal/notes"
+	"github.com/steevin/neuron-cli/internal/search"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 )

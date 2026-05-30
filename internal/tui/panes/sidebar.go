@@ -11,8 +11,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/danielsteevin/neuron-cli/internal/notes"
-	"github.com/danielsteevin/neuron-cli/internal/tui/styles"
+	"github.com/steevin/neuron-cli/internal/notes"
+	"github.com/steevin/neuron-cli/internal/tui/styles"
 )
 
 // ── List item adapter ─────────────────────────────────────────────────────────

@@ -4,8 +4,8 @@
 
 **Your second brain, from the terminal.**
 
-[![CI](https://github.com/danielsteevin/neuron-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/danielsteevin/neuron-cli/actions)
-[![Go Version](https://img.shields.io/github/go-mod/go-version/danielsteevin/neuron-cli)](go.mod)
+[![CI](https://github.com/steevin/neuron-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/steevin/neuron-cli/actions)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/steevin/neuron-cli)](go.mod)
 [![License](https://img.shields.io/badge/license-BUSL--1.1-blue)](LICENSE)
 
 > A blazing-fast, local-first knowledge manager for people who live in the terminal.
@@ -28,17 +28,17 @@
 
 ### Homebrew
 ```bash
-brew install danielsteevin/tap/neuron
+brew install steevin/tap/neuron
 ```
 
 ### Go install
 ```bash
-go install github.com/danielsteevin/neuron-cli@latest
+go install github.com/steevin/neuron-cli@latest
 ```
 
 ### Build from source
 ```bash
-git clone https://github.com/danielsteevin/neuron-cli
+git clone https://github.com/steevin/neuron-cli
 cd neuron-cli && make build
 ```
 

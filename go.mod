@@ -1,4 +1,4 @@
-module github.com/danielsteevin/neuron-cli
+module github.com/steevin/neuron-cli
 
 go 1.26.3
 

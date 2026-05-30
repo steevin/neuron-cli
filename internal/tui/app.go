@@ -13,11 +13,11 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/danielsteevin/neuron-cli/internal/config"
-	"github.com/danielsteevin/neuron-cli/internal/notes"
-	gitsync "github.com/danielsteevin/neuron-cli/internal/sync"
-	"github.com/danielsteevin/neuron-cli/internal/tui/panes"
-	"github.com/danielsteevin/neuron-cli/internal/tui/styles"
+	"github.com/steevin/neuron-cli/internal/config"
+	"github.com/steevin/neuron-cli/internal/notes"
+	gitsync "github.com/steevin/neuron-cli/internal/sync"
+	"github.com/steevin/neuron-cli/internal/tui/panes"
+	"github.com/steevin/neuron-cli/internal/tui/styles"
 )
 
 // ── Focus enumeration ─────────────────────────────────────────────────────────

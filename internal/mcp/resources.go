@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/danielsteevin/neuron-cli/internal/notes"
+	"github.com/steevin/neuron-cli/internal/notes"
 	"github.com/mark3labs/mcp-go/mcp"
 )
 

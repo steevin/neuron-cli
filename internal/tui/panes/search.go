@@ -5,7 +5,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/danielsteevin/neuron-cli/internal/tui/styles"
+	"github.com/steevin/neuron-cli/internal/tui/styles"
 )
 
 // ── Messages ──────────────────────────────────────────────────────────────────
