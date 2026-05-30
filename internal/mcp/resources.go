@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/steevin/neuron-cli/internal/notes"
 	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/steevin/neuron-cli/internal/notes"
 )
 
 func (s *NeuronMCPServer) registerResources() {
@@ -61,7 +61,7 @@ func (s *NeuronMCPServer) handleReadVault(ctx context.Context, req mcp.ReadResou
 func (s *NeuronMCPServer) handleReadNote(ctx context.Context, req mcp.ReadResourceRequest) ([]mcp.ResourceContents, error) {
 	uri := req.Params.URI
 	id := strings.TrimPrefix(uri, "neuron://notes/")
-	
+
 	note, err := s.store.Get(id)
 	if err != nil {
 		return nil, fmt.Errorf("note not found: %v", err)

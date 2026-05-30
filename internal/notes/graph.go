@@ -190,7 +190,7 @@ func (g *Graph) renderChildren(
 // found in the graph.
 func (g *Graph) renderSummary() string {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("(root note not found — graph summary)\n"))
+	sb.WriteString("(root note not found — graph summary)\n")
 	sb.WriteString(fmt.Sprintf("Total nodes: %d\n", len(g.Nodes)))
 
 	top := g.MostConnected(5)

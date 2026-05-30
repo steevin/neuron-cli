@@ -10,13 +10,13 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/spf13/cobra"
 	"github.com/steevin/neuron-cli/internal/config"
 	"github.com/steevin/neuron-cli/internal/mcp"
 	"github.com/steevin/neuron-cli/internal/notes"
 	"github.com/steevin/neuron-cli/internal/search"
 	gitsync "github.com/steevin/neuron-cli/internal/sync"
 	"github.com/steevin/neuron-cli/internal/tui"
-	"github.com/spf13/cobra"
 )
 
 // version is injected at build time via -ldflags "-X main.version=<tag>".
@@ -78,7 +78,7 @@ var addCmd = &cobra.Command{
 			return err
 		}
 		tags, _ := cmd.Flags().GetStringSlice("tag")
-		
+
 		templateName, _ := cmd.Flags().GetString("template")
 		content := ""
 		if templateName != "" {
@@ -112,7 +112,7 @@ var listCmd = &cobra.Command{
 		limit, _ := cmd.Flags().GetInt("limit")
 		query, _ := cmd.Flags().GetString("query")
 		tags, _ := cmd.Flags().GetStringSlice("tag")
-		
+
 		if query != "" {
 			if cfg.AI.Enabled {
 				// Use semantic search
@@ -124,7 +124,7 @@ var listCmd = &cobra.Command{
 				// Ideally Rebuild should be cached, but for CLI we build on-the-fly or load from db if chromem persists.
 				// chromem-go NewDB() is in-memory by default, but we can just rebuild it fast enough for a small vault.
 				fmt.Println("Generating embeddings...")
-				idx.Rebuild(cmd.Context(), noteList)
+				_ = idx.Rebuild(cmd.Context(), noteList)
 				res, err := idx.Search(cmd.Context(), query, limit)
 				if err != nil {
 					return err
@@ -210,7 +210,7 @@ var rmCmd = &cobra.Command{
 		if !force {
 			fmt.Print("Are you sure? (y/N) ")
 			var answer string
-			fmt.Scanln(&answer)
+			_, _ = fmt.Scanln(&answer)
 			if strings.ToLower(answer) != "y" {
 				return fmt.Errorf("aborted")
 			}
@@ -327,7 +327,7 @@ to AI agents such as Claude Desktop, Cursor, or any MCP-compatible client.`,
 		if err != nil {
 			return err
 		}
-		
+
 		vaultOverride, _ := cmd.Flags().GetString("vault")
 		if vaultOverride != "" {
 			cfg.VaultPath = vaultOverride
@@ -337,17 +337,17 @@ to AI agents such as Claude Desktop, Cursor, or any MCP-compatible client.`,
 		if err != nil {
 			return fmt.Errorf("failed to load vault: %v", err)
 		}
-		
+
 		// Build index
 		idx := search.NewIndex()
 		noteList, _ := store.List(notes.ListOptions{})
 		idx.Rebuild(noteList)
-		
+
 		srv, err := mcp.NewServer(cfg, store, idx)
 		if err != nil {
 			return err
 		}
-		
+
 		return srv.Start()
 	},
 }

@@ -101,7 +101,7 @@ func (idx *Index) Search(query string, limit int) []*SearchResult {
 			continue
 		}
 		df := float64(len(postings))
-		idf := math.Log((N - df + 0.5) / (df + 0.5) + 1)
+		idf := math.Log((N-df+0.5)/(df+0.5) + 1)
 
 		for id := range postings {
 			entry, ok := idx.docs[id]

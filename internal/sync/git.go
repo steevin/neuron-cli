@@ -168,7 +168,7 @@ func (s *Syncer) Status() ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	var changed []string
 	for path, fileStatus := range status {
 		if fileStatus.Worktree != git.Unmodified || fileStatus.Staging != git.Unmodified {

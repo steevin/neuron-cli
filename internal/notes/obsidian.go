@@ -14,10 +14,10 @@ import (
 // ObsidianSettings holds a subset of Obsidian's app.json configuration that
 // is relevant to note creation and attachment handling.
 type ObsidianSettings struct {
-	NewFileLocation  string `json:"newFileLocation"`  // "root", "folder", "current"
-	DefaultLocation  string `json:"newFileFolderPath"` // default folder for new notes
+	NewFileLocation  string `json:"newFileLocation"`      // "root", "folder", "current"
+	DefaultLocation  string `json:"newFileFolderPath"`    // default folder for new notes
 	AttachmentFolder string `json:"attachmentFolderPath"` // attachment storage path
-	UseMarkdownLinks bool   `json:"useMarkdownLinks"` // true → [text](path), false → [[wikilink]]
+	UseMarkdownLinks bool   `json:"useMarkdownLinks"`     // true → [text](path), false → [[wikilink]]
 }
 
 // ObsidianVault describes a detected (or absent) Obsidian vault at a given

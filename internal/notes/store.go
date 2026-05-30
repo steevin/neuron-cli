@@ -37,7 +37,7 @@ type ListOptions struct {
 
 // Store is a file-based note store rooted at a vault directory.
 type Store struct {
-	VaultPath string        // Absolute path to the vault root
+	VaultPath string         // Absolute path to the vault root
 	Vault     *ObsidianVault // Detected Obsidian metadata (may be non-Obsidian)
 }
 

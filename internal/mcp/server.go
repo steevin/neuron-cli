@@ -8,11 +8,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/mark3labs/mcp-go/server"
 	"github.com/steevin/neuron-cli/internal/config"
 	"github.com/steevin/neuron-cli/internal/notes"
 	"github.com/steevin/neuron-cli/internal/search"
-	"github.com/mark3labs/mcp-go/mcp"
-	"github.com/mark3labs/mcp-go/server"
 )
 
 // NeuronMCPServer wraps the MCP server and provides handlers that interact with the vault.
@@ -26,7 +26,7 @@ type NeuronMCPServer struct {
 // NewServer creates a new MCP server.
 func NewServer(cfg *config.Config, store *notes.Store, index *search.Index) (*NeuronMCPServer, error) {
 	mcpServer := server.NewMCPServer("neuron", "0.1.0", server.WithResourceCapabilities(true, true), server.WithPromptCapabilities(true))
-	
+
 	s := &NeuronMCPServer{
 		store:  store,
 		index:  index,
@@ -127,7 +127,7 @@ func (s *NeuronMCPServer) handleSearchNotes(ctx context.Context, req mcp.CallToo
 	limit := req.GetInt("limit", 10)
 
 	results := s.index.Search(query, limit)
-	
+
 	type searchRes struct {
 		ID      string   `json:"id"`
 		Title   string   `json:"title"`
@@ -177,7 +177,7 @@ func (s *NeuronMCPServer) handleCreateNote(ctx context.Context, req mcp.CallTool
 	}
 	content := req.GetString("content", "")
 	tagsStr := req.GetString("tags", "")
-	
+
 	var tags []string
 	if tagsStr != "" {
 		for _, t := range strings.Split(tagsStr, ",") {
@@ -239,7 +239,7 @@ func (s *NeuronMCPServer) handleListNotes(ctx context.Context, req mcp.CallToolR
 	opts := notes.ListOptions{Limit: 20}
 	limit := req.GetInt("limit", 20)
 	opts.Limit = limit
-	
+
 	tag := req.GetString("tag", "")
 	if tag != "" {
 		opts.Tags = []string{tag}
@@ -282,7 +282,7 @@ func (s *NeuronMCPServer) handleGetDaily(ctx context.Context, req mcp.CallToolRe
 		}
 		s.index.IndexNote(note)
 	}
-	
+
 	b, _ := json.Marshal(note)
 	return mcp.NewToolResultText(string(b)), nil
 }

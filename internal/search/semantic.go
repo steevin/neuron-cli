@@ -6,9 +6,9 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/philippgille/chromem-go"
 	"github.com/steevin/neuron-cli/internal/config"
 	"github.com/steevin/neuron-cli/internal/notes"
-	"github.com/philippgille/chromem-go"
 )
 
 // SemanticIndex provides vector-based semantic search over notes using local embeddings.
@@ -50,17 +50,17 @@ func NewSemanticIndex(cfg *config.Config) (*SemanticIndex, error) {
 // and embeddings must be generated.
 func (idx *SemanticIndex) Rebuild(ctx context.Context, noteList []*notes.Note) error {
 	docs := make([]chromem.Document, 0, len(noteList))
-	
+
 	for _, n := range noteList {
 		idx.docs[n.ID] = n
-		
+
 		// Create a chunk of text that represents the note semantics well
-		content := fmt.Sprintf("Title: %s\nTags: %s\n\n%s", 
-			n.Title, 
-			strings.Join(n.Tags, ", "), 
+		content := fmt.Sprintf("Title: %s\nTags: %s\n\n%s",
+			n.Title,
+			strings.Join(n.Tags, ", "),
 			n.Content,
 		)
-		
+
 		docs = append(docs, chromem.Document{
 			ID:      n.ID,
 			Content: content,

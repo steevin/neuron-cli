@@ -40,11 +40,11 @@ var (
 
 // Note represents a single markdown note in the vault.
 type Note struct {
-	ID        string // UUID (e.g. "a1b2c3d4-...")
-	Title     string // From frontmatter or first H1
-	Path      string // Absolute path to the .md file
-	RelPath   string // Relative path from vault root (set by caller)
-	Content   string // Body content (after frontmatter)
+	ID         string // UUID (e.g. "a1b2c3d4-...")
+	Title      string // From frontmatter or first H1
+	Path       string // Absolute path to the .md file
+	RelPath    string // Relative path from vault root (set by caller)
+	Content    string // Body content (after frontmatter)
 	RawContent string // Full raw file content
 
 	Tags      []string // From frontmatter + inline #tags

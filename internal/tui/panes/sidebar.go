@@ -70,7 +70,7 @@ func NewSidebar(theme *styles.Theme) Sidebar {
 		Foreground(theme.Muted)
 
 	l := list.New([]list.Item{}, delegate, 0, 0)
-	l.SetShowTitle(false)        // we render our own header
+	l.SetShowTitle(false) // we render our own header
 	l.SetShowStatusBar(false)
 	l.SetFilteringEnabled(true)
 	l.SetShowHelp(false)

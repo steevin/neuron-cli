@@ -310,10 +310,10 @@ func (m *Model) setFocus(f focus) {
 // ── Title & status bars ───────────────────────────────────────────────────────
 
 func (m Model) renderTitleBar() string {
-	leftStyle := m.theme.AppName.Copy().Background(m.theme.Surface)
+	leftStyle := m.theme.AppName.Background(m.theme.Surface)
 	left := leftStyle.Render(" 🧠 neuron")
 
-	rightStyle := m.theme.KeyHint.Copy().
+	rightStyle := m.theme.KeyHint.
 		Foreground(m.theme.Muted).
 		Background(m.theme.Surface)
 	right := rightStyle.Render("[?] help  [q] quit ")
@@ -383,7 +383,7 @@ func (m Model) renderStatusBar() string {
 func (m *Model) handlePaletteCommand(cmdStr string) tea.Cmd {
 	parts := strings.Split(cmdStr, " ")
 	base := parts[0]
-	
+
 	switch base {
 	case "/quit", "/q":
 		return tea.Quit

@@ -29,7 +29,7 @@ func (s *Store) RenderTemplate(templateName string, title string) (string, error
 	}
 
 	var tplPath string
-	
+
 	pathsToTry := []string{
 		filepath.Join(s.VaultPath, ".obsidian", "templates", templateName),
 		filepath.Join(s.VaultPath, "templates", templateName),
