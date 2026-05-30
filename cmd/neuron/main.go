@@ -1,0 +1,431 @@
+// NeuronCLI — a terminal-based personal knowledge manager with Obsidian-compatible
+// Markdown vaults, local AI embeddings, and an MCP server for AI agent integration.
+package main
+
+import (
+	"fmt"
+	"os"
+	"os/exec"
+	"strings"
+	"time"
+
+	"github.com/charmbracelet/lipgloss"
+	"github.com/danielsteevin/neuron-cli/internal/config"
+	"github.com/danielsteevin/neuron-cli/internal/mcp"
+	"github.com/danielsteevin/neuron-cli/internal/notes"
+	"github.com/danielsteevin/neuron-cli/internal/search"
+	gitsync "github.com/danielsteevin/neuron-cli/internal/sync"
+	"github.com/danielsteevin/neuron-cli/internal/tui"
+	"github.com/spf13/cobra"
+)
+
+// version is injected at build time via -ldflags "-X main.version=<tag>".
+var version = "dev"
+
+// ---------------------------------------------------------------------------
+// Root command
+// ---------------------------------------------------------------------------
+
+var rootCmd = &cobra.Command{
+	Use:   "neuron",
+	Short: "🧠 Your second brain, from the terminal",
+	Long: `neuron — a terminal-based personal knowledge manager.
+
+Features:
+  • Obsidian-compatible Markdown vault (works alongside the Obsidian app)
+  • Full-text and semantic search powered by local AI embeddings (Ollama)
+  • Daily notes, wikilinks, tags, and frontmatter out of the box
+  • Git-based sync to any remote (GitHub, Gitea, …)
+  • MCP server for seamless AI agent integration (Claude, GPT-4, …)
+  • A buttery-smooth Bubble Tea TUI for keyboard-driven browsing
+
+Run 'neuron help <command>' for detailed usage of any subcommand.`,
+	SilenceUsage: true,
+	PersistentPreRun: func(cmd *cobra.Command, args []string) {
+		// Skip banner for the bare version command — it has its own output.
+		if cmd.Name() == "version" {
+			return
+		}
+		nameStyle := lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("#58a6ff"))
+		dimStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#6e7681"))
+		fmt.Printf("%s %s\n\n",
+			nameStyle.Render("neuron"),
+			dimStyle.Render("v"+version),
+		)
+	},
+}
+
+// ---------------------------------------------------------------------------
+// Subcommands
+// ---------------------------------------------------------------------------
+
+// addCmd creates a new note in the vault.
+var addCmd = &cobra.Command{
+	Use:   "add [title]",
+	Short: "Create a new note",
+	Long:  "Create a new Markdown note in your vault, optionally from clipboard content or a template.",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if len(args) == 0 {
+			return fmt.Errorf("title is required")
+		}
+		title := strings.Join(args, " ")
+		cfg, _ := config.Load()
+		store, err := notes.NewStore(cfg.VaultPath)
+		if err != nil {
+			return err
+		}
+		tags, _ := cmd.Flags().GetStringSlice("tag")
+		
+		templateName, _ := cmd.Flags().GetString("template")
+		content := ""
+		if templateName != "" {
+			var renderErr error
+			content, renderErr = store.RenderTemplate(templateName, title)
+			if renderErr != nil {
+				return fmt.Errorf("template error: %v", renderErr)
+			}
+		}
+
+		note, err := store.Create(title, tags, content)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("Created %s\n", note.Path)
+		return nil
+	},
+}
+
+// listCmd lists notes in the vault with optional filtering.
+var listCmd = &cobra.Command{
+	Use:   "list",
+	Short: "List notes in your vault",
+	Long:  "List notes in your vault. Supports filtering by tag or full-text/semantic query.",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, _ := config.Load()
+		store, err := notes.NewStore(cfg.VaultPath)
+		if err != nil {
+			return err
+		}
+		limit, _ := cmd.Flags().GetInt("limit")
+		query, _ := cmd.Flags().GetString("query")
+		tags, _ := cmd.Flags().GetStringSlice("tag")
+		
+		if query != "" {
+			if cfg.AI.Enabled {
+				// Use semantic search
+				idx, err := search.NewSemanticIndex(cfg)
+				if err != nil {
+					return fmt.Errorf("semantic search setup failed: %v", err)
+				}
+				noteList, _ := store.List(notes.ListOptions{})
+				// Ideally Rebuild should be cached, but for CLI we build on-the-fly or load from db if chromem persists.
+				// chromem-go NewDB() is in-memory by default, but we can just rebuild it fast enough for a small vault.
+				fmt.Println("Generating embeddings...")
+				idx.Rebuild(cmd.Context(), noteList)
+				res, err := idx.Search(cmd.Context(), query, limit)
+				if err != nil {
+					return err
+				}
+				for _, r := range res {
+					fmt.Printf("%.2f - %s\n", r.Score, r.Note.Title)
+				}
+				return nil
+			} else {
+				// Use BM25 search
+				idx := search.NewIndex()
+				noteList, _ := store.List(notes.ListOptions{})
+				idx.Rebuild(noteList)
+				res := idx.Search(query, limit)
+				for _, r := range res {
+					fmt.Printf("%s\n", r.Note.Title)
+				}
+				return nil
+			}
+		}
+
+		noteList, err := store.List(notes.ListOptions{Limit: limit, Tags: tags})
+		if err != nil {
+			return err
+		}
+		for _, n := range noteList {
+			fmt.Printf("%s\n", n.Title)
+		}
+		return nil
+	},
+}
+
+// editCmd opens an existing note in the configured editor.
+var editCmd = &cobra.Command{
+	Use:   "edit [id-or-title]",
+	Short: "Open a note in your editor",
+	Long:  "Locate a note by ID or fuzzy title match and open it in $EDITOR.",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if len(args) == 0 {
+			return fmt.Errorf("id or title required")
+		}
+		cfg, _ := config.Load()
+		store, err := notes.NewStore(cfg.VaultPath)
+		if err != nil {
+			return err
+		}
+		note, err := store.Get(strings.Join(args, " "))
+		if err != nil {
+			return err
+		}
+		editor := cfg.Editor
+		if editor == "" {
+			editor = os.Getenv("EDITOR")
+			if editor == "" {
+				editor = "vi"
+			}
+		}
+		c := exec.Command(editor, note.Path)
+		c.Stdin, c.Stdout, c.Stderr = os.Stdin, os.Stdout, os.Stderr
+		return c.Run()
+	},
+}
+
+// rmCmd deletes a note from the vault.
+var rmCmd = &cobra.Command{
+	Use:   "rm [id-or-title]",
+	Short: "Delete a note",
+	Long:  "Permanently delete a note from the vault. Requires --force/-f to skip confirmation.",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if len(args) == 0 {
+			return fmt.Errorf("id or title required")
+		}
+		cfg, _ := config.Load()
+		store, err := notes.NewStore(cfg.VaultPath)
+		if err != nil {
+			return err
+		}
+		note, err := store.Get(strings.Join(args, " "))
+		if err != nil {
+			return err
+		}
+		force, _ := cmd.Flags().GetBool("force")
+		if !force {
+			fmt.Print("Are you sure? (y/N) ")
+			var answer string
+			fmt.Scanln(&answer)
+			if strings.ToLower(answer) != "y" {
+				return fmt.Errorf("aborted")
+			}
+		}
+		if err := store.Delete(note.ID); err != nil {
+			return err
+		}
+		fmt.Println("Note deleted")
+		return nil
+	},
+}
+
+// openCmd reveals the vault folder in Finder (macOS).
+var openCmd = &cobra.Command{
+	Use:   "open",
+	Short: "Open vault folder in Finder",
+	Long:  "Open the vault directory in the macOS Finder (uses 'open' under the hood).",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, _ := config.Load()
+		c := exec.Command("open", cfg.VaultPath)
+		return c.Run()
+	},
+}
+
+// statsCmd prints aggregate statistics about the vault.
+var statsCmd = &cobra.Command{
+	Use:   "stats",
+	Short: "Show vault statistics",
+	Long:  "Display note count, tag count, word count, and other vault-level metrics.",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, _ := config.Load()
+		store, err := notes.NewStore(cfg.VaultPath)
+		if err != nil {
+			return err
+		}
+		count, _ := store.Count()
+		tags, _ := store.Tags()
+		fmt.Printf("Notes: %d\n", count)
+		fmt.Printf("Tags:  %d\n", len(tags))
+		return nil
+	},
+}
+
+// todayCmd opens or creates the daily note for the current date.
+var todayCmd = &cobra.Command{
+	Use:   "today",
+	Short: "Open or create today's daily note",
+	Long:  "Open the daily note for today (YYYY-MM-DD.md). Creates it if it doesn't exist.",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, _ := config.Load()
+		store, err := notes.NewStore(cfg.VaultPath)
+		if err != nil {
+			return err
+		}
+		title := "Daily " + time.Now().Format("2006-01-02")
+		note, err := store.Get(title)
+		if err != nil {
+			content, renderErr := store.RenderTemplate("daily", title)
+			if renderErr != nil || content == "" {
+				content = "## 🎯 Today's goals\n- [ ] \n\n## 📝 Notes\n\n## 🔗 Links\n"
+			}
+			note, err = store.Create(title, []string{"daily"}, content)
+			if err != nil {
+				return err
+			}
+		}
+		editor := cfg.Editor
+		if editor == "" {
+			editor = os.Getenv("EDITOR")
+			if editor == "" {
+				editor = "vi"
+			}
+		}
+		c := exec.Command(editor, note.Path)
+		c.Stdin, c.Stdout, c.Stderr = os.Stdin, os.Stdout, os.Stderr
+		return c.Run()
+	},
+}
+
+// syncCmd synchronises the vault with a Git remote.
+var syncCmd = &cobra.Command{
+	Use:   "sync",
+	Short: "Sync vault with Git remote",
+	Long:  "Commit any local changes and push to the configured Git remote. Use --pull to fetch first.",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, _ := config.Load()
+		syncer := gitsync.NewSyncer(cfg.VaultPath, cfg.GitRemote)
+		pull, _ := cmd.Flags().GetBool("pull")
+		if pull {
+			if err := syncer.Pull(); err != nil {
+				fmt.Printf("Pull failed: %v\n", err)
+			}
+		}
+		res, err := syncer.Sync()
+		if err != nil {
+			return err
+		}
+		fmt.Println(res.Message)
+		if res.Pushed {
+			fmt.Println("Changes pushed to remote.")
+		}
+		return nil
+	},
+}
+
+// mcpCmd starts the Model Context Protocol server.
+var mcpCmd = &cobra.Command{
+	Use:   "mcp",
+	Short: "Start the MCP server for AI agent integration",
+	Long: `Start an MCP (Model Context Protocol) server that exposes vault tools
+to AI agents such as Claude Desktop, Cursor, or any MCP-compatible client.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, err := config.Load()
+		if err != nil {
+			return err
+		}
+		
+		vaultOverride, _ := cmd.Flags().GetString("vault")
+		if vaultOverride != "" {
+			cfg.VaultPath = vaultOverride
+		}
+
+		store, err := notes.NewStore(cfg.VaultPath)
+		if err != nil {
+			return fmt.Errorf("failed to load vault: %v", err)
+		}
+		
+		// Build index
+		idx := search.NewIndex()
+		noteList, _ := store.List(notes.ListOptions{})
+		idx.Rebuild(noteList)
+		
+		srv, err := mcp.NewServer(cfg, store, idx)
+		if err != nil {
+			return err
+		}
+		
+		return srv.Start()
+	},
+}
+
+// tuiCmd launches the interactive Bubble Tea TUI.
+var tuiCmd = &cobra.Command{
+	Use:   "tui",
+	Short: "Open the interactive TUI",
+	Long:  "Launch the full-screen keyboard-driven terminal UI for browsing and editing your vault.",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, err := config.Load()
+		if err != nil {
+			return err
+		}
+		return tui.Run(cfg)
+	},
+}
+
+// versionCmd prints the build version.
+var versionCmd = &cobra.Command{
+	Use:   "version",
+	Short: "Print version",
+	Long:  "Print the neuron build version and exit.",
+	Run: func(cmd *cobra.Command, args []string) {
+		fmt.Printf("neuron version %s\n", version)
+	},
+}
+
+// ---------------------------------------------------------------------------
+// Flag registration
+// ---------------------------------------------------------------------------
+
+func init() {
+	// addCmd flags
+	addCmd.Flags().Bool("from-clipboard", false, "Populate note body from clipboard contents")
+	addCmd.Flags().StringSlice("tag", nil, "Tags to apply to the new note (repeatable)")
+	addCmd.Flags().String("template", "", "Name of the note template to use")
+
+	// listCmd flags
+	listCmd.Flags().StringSlice("tag", nil, "Filter by tag (repeatable)")
+	listCmd.Flags().StringP("query", "q", "", "Full-text or semantic search query")
+	listCmd.Flags().Int("limit", 50, "Maximum number of notes to display")
+
+	// rmCmd flags
+	rmCmd.Flags().BoolP("force", "f", false, "Skip confirmation prompt")
+
+	// syncCmd flags
+	syncCmd.Flags().String("remote", "", "Override the configured Git remote")
+	syncCmd.Flags().Bool("pull", false, "Pull from remote before pushing")
+
+	// mcpCmd flags
+	mcpCmd.Flags().String("vault", "", "Override vault path for this session")
+}
+
+// ---------------------------------------------------------------------------
+// Wiring & entry point
+// ---------------------------------------------------------------------------
+
+func main() {
+	// Register all subcommands.
+	rootCmd.AddCommand(
+		addCmd,
+		listCmd,
+		editCmd,
+		rmCmd,
+		openCmd,
+		statsCmd,
+		todayCmd,
+		syncCmd,
+		mcpCmd,
+		tuiCmd,
+		versionCmd,
+	)
+
+	// When neuron is invoked with no subcommand, fall through to the TUI.
+	rootCmd.RunE = tuiCmd.RunE
+
+	if err := rootCmd.Execute(); err != nil {
+		os.Exit(1)
+	}
+}
