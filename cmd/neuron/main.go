@@ -157,11 +157,29 @@ var listCmd = &cobra.Command{
 	},
 }
 
+// resolveEditor returns the editor to use, consulting (in order):
+//  1. cfg.Editor (set via `neuron config set editor <cmd>` or the config file)
+//  2. The $EDITOR environment variable
+//  3. The $VISUAL environment variable
+//  4. "vi" as a last-resort fallback
+func resolveEditor(cfg *config.Config) string {
+	if cfg.Editor != "" {
+		return cfg.Editor
+	}
+	if e := os.Getenv("EDITOR"); e != "" {
+		return e
+	}
+	if e := os.Getenv("VISUAL"); e != "" {
+		return e
+	}
+	return "vi"
+}
+
 // editCmd opens an existing note in the configured editor.
 var editCmd = &cobra.Command{
 	Use:   "edit [id-or-title]",
 	Short: "Open a note in your editor",
-	Long:  "Locate a note by ID or fuzzy title match and open it in $EDITOR.",
+	Long:  "Locate a note by ID or fuzzy title match and open it in the configured editor.",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if len(args) == 0 {
 			return fmt.Errorf("id or title required")
@@ -175,14 +193,7 @@ var editCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		editor := cfg.Editor
-		if editor == "" {
-			editor = os.Getenv("EDITOR")
-			if editor == "" {
-				editor = "vi"
-			}
-		}
-		c := exec.Command(editor, note.Path)
+		c := exec.Command(resolveEditor(cfg), note.Path)
 		c.Stdin, c.Stdout, c.Stderr = os.Stdin, os.Stdout, os.Stderr
 		return c.Run()
 	},
@@ -277,14 +288,7 @@ var todayCmd = &cobra.Command{
 				return err
 			}
 		}
-		editor := cfg.Editor
-		if editor == "" {
-			editor = os.Getenv("EDITOR")
-			if editor == "" {
-				editor = "vi"
-			}
-		}
-		c := exec.Command(editor, note.Path)
+		c := exec.Command(resolveEditor(cfg), note.Path)
 		c.Stdin, c.Stdout, c.Stderr = os.Stdin, os.Stdout, os.Stderr
 		return c.Run()
 	},
@@ -352,6 +356,90 @@ to AI agents such as Claude Desktop, Cursor, or any MCP-compatible client.`,
 	},
 }
 
+// configCmd allows the user to inspect and change NeuronCLI settings without
+// editing the TOML file by hand.
+//
+// Usage:
+//
+//	neuron config get <key>          — print the current value of a setting
+//	neuron config set <key> <value>  — update a setting and save it
+//
+// Supported keys: vault_path, editor, theme, git_remote
+var configCmd = &cobra.Command{
+	Use:   "config",
+	Short: "Read or update NeuronCLI settings",
+	Long: `Read or update NeuronCLI settings stored in ~/.config/neuron/config.toml.
+
+Supported keys:
+  vault_path   Absolute path to your Markdown vault
+  editor       Command used to open notes (e.g. code, nvim, nano)
+  theme        TUI colour scheme: dark or light
+  git_remote   Git remote name or URL used by 'neuron sync'`,
+}
+
+var configGetCmd = &cobra.Command{
+	Use:   "get <key>",
+	Short: "Print the current value of a setting",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, err := config.Load()
+		if err != nil {
+			return err
+		}
+		key := args[0]
+		switch key {
+		case "vault_path":
+			fmt.Println(cfg.VaultPath)
+		case "editor":
+			v := cfg.Editor
+			if v == "" {
+				v = "(not set — using $EDITOR / $VISUAL / vi)"
+			}
+			fmt.Println(v)
+		case "theme":
+			fmt.Println(cfg.Theme)
+		case "git_remote":
+			fmt.Println(cfg.GitRemote)
+		default:
+			return fmt.Errorf("unknown key %q — valid keys: vault_path, editor, theme, git_remote", key)
+		}
+		return nil
+	},
+}
+
+var configSetCmd = &cobra.Command{
+	Use:   "set <key> <value>",
+	Short: "Update a setting and save it to disk",
+	Args:  cobra.ExactArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, err := config.Load()
+		if err != nil {
+			return err
+		}
+		key, value := args[0], args[1]
+		switch key {
+		case "vault_path":
+			cfg.VaultPath = value
+		case "editor":
+			cfg.Editor = value
+		case "theme":
+			if value != "dark" && value != "light" {
+				return fmt.Errorf("theme must be \"dark\" or \"light\", got %q", value)
+			}
+			cfg.Theme = value
+		case "git_remote":
+			cfg.GitRemote = value
+		default:
+			return fmt.Errorf("unknown key %q — valid keys: vault_path, editor, theme, git_remote", key)
+		}
+		if err := config.Save(cfg); err != nil {
+			return err
+		}
+		fmt.Printf("✓ %s = %s\n", key, value)
+		return nil
+	},
+}
+
 // tuiCmd launches the interactive Bubble Tea TUI.
 var tuiCmd = &cobra.Command{
 	Use:   "tui",
@@ -407,6 +495,9 @@ func init() {
 // ---------------------------------------------------------------------------
 
 func main() {
+	// Wire config sub-subcommands.
+	configCmd.AddCommand(configGetCmd, configSetCmd)
+
 	// Register all subcommands.
 	rootCmd.AddCommand(
 		addCmd,
@@ -420,6 +511,7 @@ func main() {
 		mcpCmd,
 		tuiCmd,
 		versionCmd,
+		configCmd,
 	)
 
 	// When neuron is invoked with no subcommand, fall through to the TUI.
