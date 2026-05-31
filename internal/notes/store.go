@@ -42,7 +42,7 @@ func NewStore(vaultPath string) (*Store, error) {
 	}
 
 	// Ensure the directory exists.
-	if err := os.MkdirAll(vaultPath, 0o755); err != nil {
+	if err := os.MkdirAll(vaultPath, 0o700); err != nil {
 		return nil, fmt.Errorf("notes: creating vault directory %q: %w", vaultPath, err)
 	}
 
@@ -86,7 +86,7 @@ func (s *Store) Create(title string, tags []string, content string) (*Note, erro
 
 	note.RawContent = ToMarkdown(note)
 
-	if err := os.WriteFile(fullPath, []byte(note.RawContent), 0o644); err != nil {
+	if err := os.WriteFile(fullPath, []byte(note.RawContent), 0o600); err != nil {
 		return nil, fmt.Errorf("notes: writing note %q: %w", fullPath, err)
 	}
 
@@ -199,7 +199,7 @@ func (s *Store) Update(note *Note) error {
 	note.Updated = time.Now()
 	note.RawContent = ToMarkdown(note)
 
-	if err := os.WriteFile(note.Path, []byte(note.RawContent), 0o644); err != nil {
+	if err := os.WriteFile(note.Path, []byte(note.RawContent), 0o600); err != nil {
 		return fmt.Errorf("notes: writing note %q: %w", note.Path, err)
 	}
 	return nil
@@ -213,7 +213,7 @@ func (s *Store) Delete(idOrTitle string) error {
 	}
 
 	trashDir := filepath.Join(s.VaultPath, ".trash")
-	if err := os.MkdirAll(trashDir, 0o755); err != nil {
+	if err := os.MkdirAll(trashDir, 0o700); err != nil {
 		return fmt.Errorf("notes: creating .trash directory: %w", err)
 	}
 

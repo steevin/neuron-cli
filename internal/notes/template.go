@@ -22,6 +22,9 @@ func (s *Store) RenderTemplate(templateName string, title string) (string, error
 		return "", nil
 	}
 
+	// Prevent path traversal by only taking the base name
+	templateName = filepath.Base(templateName)
+
 	// Determine template path. We check `.obsidian/templates` first, then `templates`
 	// Ensure template ends in .md
 	if filepath.Ext(templateName) == "" {

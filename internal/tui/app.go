@@ -423,6 +423,14 @@ func (m *Model) openInEditor() tea.Cmd {
 		}
 	}
 
+	// Sanitize editor input
+	editorParts := strings.Fields(editor)
+	if len(editorParts) > 0 {
+		editor = editorParts[0]
+	} else {
+		editor = "vi"
+	}
+
 	return tea.ExecProcess(exec.Command(editor, note.Path), func(err error) tea.Msg {
 		if err != nil {
 			return errMsg{err: fmt.Errorf("editor: %w", err)}

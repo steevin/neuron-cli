@@ -173,14 +173,22 @@ var listCmd = &cobra.Command{
 //  3. The $VISUAL environment variable
 //  4. "vi" as a last-resort fallback
 func resolveEditor(cfg *config.Config) string {
+	editor := "vi"
 	if cfg.Editor != "" {
-		return cfg.Editor
+		editor = cfg.Editor
+	} else if e := os.Getenv("EDITOR"); e != "" {
+		editor = e
+	} else if e := os.Getenv("VISUAL"); e != "" {
+		editor = e
 	}
-	if e := os.Getenv("EDITOR"); e != "" {
-		return e
-	}
-	if e := os.Getenv("VISUAL"); e != "" {
-		return e
+
+	// Sanitize the input to prevent arbitrary shell command injection
+	// if the user provided arguments like `vi; rm -rf /`. This strictly uses
+	// the first field as the command. If users need flags, they should use a
+	// wrapper script.
+	editorParts := strings.Fields(editor)
+	if len(editorParts) > 0 {
+		return editorParts[0]
 	}
 	return "vi"
 }
@@ -251,7 +259,7 @@ var openCmd = &cobra.Command{
 	Long:  "Open the vault directory in the macOS Finder (uses 'open' under the hood).",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, _ := config.Load()
-		c := exec.Command("open", cfg.VaultPath)
+		c := exec.Command("open", "--", cfg.VaultPath)
 		return c.Run()
 	},
 }
