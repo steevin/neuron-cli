@@ -59,7 +59,7 @@ Run 'neuron help <command>' for detailed usage of any subcommand.`,
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
 		// Skip banner for the bare version command — it has its own output.
 		// Also skip for mcp command, as it expects clean JSON-RPC over stdio.
-		if cmd.Name() == "version" || cmd.Name() == "mcp" {
+		if cmd.Name() == "version" || cmd.Name() == "mcp" || cmd.Name() == "anlly" {
 			return
 		}
 		nameStyle := lipgloss.NewStyle().
@@ -483,6 +483,16 @@ var versionCmd = &cobra.Command{
 	},
 }
 
+// anllyCmd is a special hidden command.
+var anllyCmd = &cobra.Command{
+	Use:    "anlly",
+	Hidden: true,
+	Short:  "Anlly",
+	Run: func(cmd *cobra.Command, args []string) {
+		fmt.Println("Ella fue mi inspiración siempre cuando estaba creando esta app.")
+	},
+}
+
 func init() {
 	// addCmd flags
 	addCmd.Flags().Bool("from-clipboard", false, "Populate note body from clipboard contents")
@@ -523,6 +533,7 @@ func main() {
 		tuiCmd,
 		versionCmd,
 		configCmd,
+		anllyCmd,
 	)
 
 	// When neuron is invoked with no subcommand, fall through to the TUI.
