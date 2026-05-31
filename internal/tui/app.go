@@ -9,8 +9,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/help"
+	"github.com/charmbracelet/bubbles/key"
+	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/sahilm/fuzzy"
 
 	"github.com/steevin/neuron-cli/internal/config"
 	"github.com/steevin/neuron-cli/internal/notes"
@@ -46,6 +50,10 @@ type Model struct {
 	sidebar   panes.Sidebar
 	editor    panes.Editor
 	search    panes.SearchPane
+	spinner   spinner.Model
+	help      help.Model
+	showHelp  bool
+	syncing   bool
 	focused   focus
 	allNotes  []*notes.Note // unfiltered master list
 	width     int
@@ -53,6 +61,39 @@ type Model struct {
 	ready     bool // true once the terminal size is known
 	err       error
 	statusMsg string
+}
+
+type keyMap struct {
+	Tab    key.Binding
+	Search key.Binding
+	New    key.Binding
+	Edit   key.Binding
+	Sync   key.Binding
+	Graph  key.Binding
+	Help   key.Binding
+	Quit   key.Binding
+}
+
+func (k keyMap) ShortHelp() []key.Binding {
+	return []key.Binding{k.Tab, k.Search, k.New, k.Edit, k.Sync, k.Graph, k.Help, k.Quit}
+}
+
+func (k keyMap) FullHelp() [][]key.Binding {
+	return [][]key.Binding{
+		{k.Tab, k.Search, k.New, k.Edit},
+		{k.Sync, k.Graph, k.Help, k.Quit},
+	}
+}
+
+var keys = keyMap{
+	Tab:    key.NewBinding(key.WithKeys("tab", "shift+tab"), key.WithHelp("tab", "focus")),
+	Search: key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "search")),
+	New:    key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "new")),
+	Edit:   key.NewBinding(key.WithKeys("e"), key.WithHelp("e", "edit")),
+	Sync:   key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "sync")),
+	Graph:  key.NewBinding(key.WithKeys("g"), key.WithHelp("g", "graph")),
+	Help:   key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
+	Quit:   key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
 }
 
 // New constructs a Model from the provided configuration. It sets up the note
@@ -71,6 +112,12 @@ func New(cfg *config.Config) (*Model, error) {
 	editor := panes.NewEditor(theme)
 	search := panes.NewSearchPane(theme)
 
+	s := spinner.New()
+	s.Spinner = spinner.Dot
+	s.Style = lipgloss.NewStyle().Foreground(theme.Muted)
+
+	h := help.New()
+
 	return &Model{
 		cfg:     cfg,
 		store:   store,
@@ -78,19 +125,24 @@ func New(cfg *config.Config) (*Model, error) {
 		sidebar: sidebar,
 		editor:  editor,
 		search:  search,
+		spinner: s,
+		help:    h,
 		focused: focusSidebar,
 	}, nil
 }
 
 // Init loads notes from the store in the background.
 func (m Model) Init() tea.Cmd {
-	return func() tea.Msg {
-		noteList, err := m.store.List(notes.ListOptions{})
-		if err != nil {
-			return errMsg{err: err}
-		}
-		return notesLoadedMsg{notes: noteList}
-	}
+	return tea.Batch(
+		m.spinner.Tick,
+		func() tea.Msg {
+			noteList, err := m.store.List(notes.ListOptions{})
+			if err != nil {
+				return errMsg{err: err}
+			}
+			return notesLoadedMsg{notes: noteList}
+		},
+	)
 }
 
 // Update is the Bubble Tea message handler.
@@ -103,7 +155,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.ready = true
+		m.help.Width = msg.Width
 		m.layout()
+
+	case spinner.TickMsg:
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		cmds = append(cmds, cmd)
 
 	case notesLoadedMsg:
 		m.allNotes = msg.notes
@@ -113,9 +171,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case errMsg:
 		m.err = msg.err
 		m.statusMsg = "Error: " + msg.err.Error()
+		m.syncing = false
 
 	case statusMsg:
 		m.statusMsg = msg.msg
+		m.syncing = false
 
 	case panes.SearchQueryMsg:
 		if strings.HasPrefix(msg.Query, "/") {
@@ -144,7 +204,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "?":
 			if m.focused != focusSearch {
-				m.statusMsg = helpText()
+				m.showHelp = !m.showHelp
 			}
 
 		case "tab":
@@ -192,6 +252,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "s":
 			if m.focused != focusSearch {
+				m.syncing = true
 				m.statusMsg = "Syncing..."
 				cmds = append(cmds, m.syncCmd())
 			}
@@ -246,6 +307,17 @@ func (m Model) View() string {
 		m.sidebar.View(),
 		m.editor.View(),
 	)
+
+	if m.showHelp {
+		m.help.ShowAll = true
+		helpView := lipgloss.NewStyle().
+			Width(m.width).
+			Height(m.height - 2).
+			Align(lipgloss.Center).
+			Render("\n\n" + m.help.View(keys))
+		middle = helpView
+	}
+
 	statusBar := m.renderStatusBar()
 
 	return lipgloss.JoinVertical(lipgloss.Left,
@@ -316,11 +388,10 @@ func (m Model) renderStatusBar() string {
 		if strings.HasPrefix(query, "/") {
 			// Show command palette suggestions
 			suggestions := []string{"/add", "/today", "/sync", "/stats", "/quit"}
+			matches := fuzzy.Find(query, suggestions)
 			var filtered []string
-			for _, s := range suggestions {
-				if strings.HasPrefix(s, query) {
-					filtered = append(filtered, s)
-				}
+			for _, match := range matches {
+				filtered = append(filtered, match.Str)
 			}
 			sugStr := strings.Join(filtered, "  ")
 			if sugStr == "" {
@@ -332,7 +403,11 @@ func (m Model) renderStatusBar() string {
 			left = m.search.View()
 		}
 	} else if m.statusMsg != "" {
-		left = m.theme.StatusBar.Render(" " + m.statusMsg)
+		msg := m.statusMsg
+		if m.syncing {
+			msg = m.spinner.View() + " " + msg
+		}
+		left = m.theme.StatusBar.Render(" " + msg)
 	} else {
 		left = m.theme.StatusBar.Render(m.search.View())
 	}
@@ -362,6 +437,7 @@ func (m *Model) handlePaletteCommand(cmdStr string) tea.Cmd {
 	case "/quit", "/q":
 		return tea.Quit
 	case "/sync", "/s":
+		m.syncing = true
 		m.statusMsg = "Syncing..."
 		return m.syncCmd()
 	case "/today", "/t":

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
 	"github.com/steevin/neuron-cli/internal/config"
@@ -49,6 +50,8 @@ Commands:
   config get <key>         Print a setting (vault_path, editor, theme, git_remote)
   config set <key> <val>   Update a setting and save it to config.toml
   version                  Print the build version
+  completion               Generate the autocompletion script for the specified shell
+  init                     Initialize NeuronCLI interactively
 
 Update:
   Homebrew   brew upgrade steevin/tap/neuron
@@ -79,10 +82,22 @@ var addCmd = &cobra.Command{
 	Short: "Create a new note",
 	Long:  "Create a new Markdown note in your vault, optionally from clipboard content or a template.",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		var title string
 		if len(args) == 0 {
-			return fmt.Errorf("title is required")
+			err := huh.NewInput().
+				Title("Note Title").
+				Description("Enter the title for the new note").
+				Value(&title).
+				Run()
+			if err != nil {
+				return err
+			}
+			if title == "" {
+				return fmt.Errorf("title is required")
+			}
+		} else {
+			title = strings.Join(args, " ")
 		}
-		title := strings.Join(args, " ")
 		cfg, _ := config.Load()
 		store, err := notes.NewStore(cfg.VaultPath)
 		if err != nil {
@@ -140,8 +155,10 @@ var listCmd = &cobra.Command{
 				if err != nil {
 					return err
 				}
+				scoreStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#8b949e"))
+				titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#e6edf3"))
 				for _, r := range res {
-					fmt.Printf("%.2f - %s\n", r.Score, r.Note.Title)
+					fmt.Printf("%s %s\n", scoreStyle.Render(fmt.Sprintf("%.2f", r.Score)), titleStyle.Render(r.Note.Title))
 				}
 				return nil
 			} else {
@@ -150,8 +167,9 @@ var listCmd = &cobra.Command{
 				noteList, _ := store.List(notes.ListOptions{})
 				idx.Rebuild(noteList)
 				res := idx.Search(query, limit)
+				titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#e6edf3"))
 				for _, r := range res {
-					fmt.Printf("%s\n", r.Note.Title)
+					fmt.Printf("%s\n", titleStyle.Render(r.Note.Title))
 				}
 				return nil
 			}
@@ -161,8 +179,14 @@ var listCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#e6edf3"))
+		tagStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#6e7681"))
 		for _, n := range noteList {
-			fmt.Printf("%s\n", n.Title)
+			tagsStr := ""
+			if len(n.Tags) > 0 {
+				tagsStr = tagStyle.Render(" #" + strings.Join(n.Tags, " #"))
+			}
+			fmt.Printf("%s%s\n", titleStyle.Render(n.Title), tagsStr)
 		}
 		return nil
 	},
@@ -200,15 +224,28 @@ var editCmd = &cobra.Command{
 	Short: "Open a note in your editor",
 	Long:  "Locate a note by ID or fuzzy title match and open it in the configured editor.",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		var idOrTitle string
 		if len(args) == 0 {
-			return fmt.Errorf("id or title required")
+			err := huh.NewInput().
+				Title("Note ID or Title").
+				Description("Enter the ID or title of the note to edit").
+				Value(&idOrTitle).
+				Run()
+			if err != nil {
+				return err
+			}
+			if idOrTitle == "" {
+				return fmt.Errorf("id or title required")
+			}
+		} else {
+			idOrTitle = strings.Join(args, " ")
 		}
 		cfg, _ := config.Load()
 		store, err := notes.NewStore(cfg.VaultPath)
 		if err != nil {
 			return err
 		}
-		note, err := store.Get(strings.Join(args, " "))
+		note, err := store.Get(idOrTitle)
 		if err != nil {
 			return err
 		}
@@ -224,15 +261,28 @@ var rmCmd = &cobra.Command{
 	Short: "Delete a note",
 	Long:  "Permanently delete a note from the vault. Requires --force/-f to skip confirmation.",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		var idOrTitle string
 		if len(args) == 0 {
-			return fmt.Errorf("id or title required")
+			err := huh.NewInput().
+				Title("Note ID or Title").
+				Description("Enter the ID or title of the note to delete").
+				Value(&idOrTitle).
+				Run()
+			if err != nil {
+				return err
+			}
+			if idOrTitle == "" {
+				return fmt.Errorf("id or title required")
+			}
+		} else {
+			idOrTitle = strings.Join(args, " ")
 		}
 		cfg, _ := config.Load()
 		store, err := notes.NewStore(cfg.VaultPath)
 		if err != nil {
 			return err
 		}
-		note, err := store.Get(strings.Join(args, " "))
+		note, err := store.Get(idOrTitle)
 		if err != nil {
 			return err
 		}
@@ -278,8 +328,10 @@ var statsCmd = &cobra.Command{
 		}
 		count, _ := store.Count()
 		tags, _ := store.Tags()
-		fmt.Printf("Notes: %d\n", count)
-		fmt.Printf("Tags:  %d\n", len(tags))
+		titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#58a6ff"))
+		valueStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#3fb950"))
+		fmt.Printf("%s %s\n", titleStyle.Render("Notes:"), valueStyle.Render(fmt.Sprintf("%d", count)))
+		fmt.Printf("%s %s\n", titleStyle.Render("Tags: "), valueStyle.Render(fmt.Sprintf("%d", len(tags))))
 		return nil
 	},
 }
@@ -534,6 +586,7 @@ func main() {
 		versionCmd,
 		configCmd,
 		anllyCmd,
+		initAppCmd,
 	)
 
 	// When neuron is invoked with no subcommand, fall through to the TUI.

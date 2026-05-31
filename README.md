@@ -12,6 +12,12 @@
 
 neuron is a local-first, Obsidian-compatible note manager for the terminal. It keeps your Markdown vault exactly where it is — no migration, no cloud, no subscription. Just fast, keyboard-driven access to your notes from anywhere in a shell.
 
+**✨ Pro Features Included:**
+- **Interactive CLI Prompts:** Missing arguments? `neuron` will interactively prompt you using beautiful terminal UI (`huh`).
+- **Fuzzy Command Palette:** Press `/` in the TUI to fuzzy-search available commands.
+- **Rich TUI Help:** Press `?` in the TUI to open a modal overlay with all keybindings.
+- **Colorized Outputs & Spinners:** Clean, colorful formatting using `lipgloss` and `bubbles/spinner`.
+
 ---
 
 ## Install
@@ -31,10 +37,12 @@ git clone https://github.com/steevin/neuron-cli && cd neuron-cli && make build
 
 ```bash
 neuron                              # open the TUI (default)
+neuron init                         # interactive setup wizard (first run)
+neuron add                          # interactively prompts for a note title
 neuron add "standup notes" --tag work
 neuron edit "standup notes"         # opens in $EDITOR
 neuron today                        # daily note for today
-neuron list -q "kubernetes"         # search your vault
+neuron list -q "kubernetes"         # search your vault (now with colors!)
 neuron sync --pull                  # git pull + push
 neuron config set editor nvim       # change editor
 ```
