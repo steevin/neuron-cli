@@ -489,7 +489,7 @@ var anllyCmd = &cobra.Command{
 	Hidden: true,
 	Short:  "Anlly",
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("Ella fue mi inspiración siempre cuando estaba creando esta app.")
+		fmt.Println("She was always my inspiration while creating this app.")
 	},
 }
 
