@@ -58,7 +58,8 @@ Run 'neuron help <command>' for detailed usage of any subcommand.`,
 	SilenceUsage: true,
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
 		// Skip banner for the bare version command — it has its own output.
-		if cmd.Name() == "version" {
+		// Also skip for mcp command, as it expects clean JSON-RPC over stdio.
+		if cmd.Name() == "version" || cmd.Name() == "mcp" {
 			return
 		}
 		nameStyle := lipgloss.NewStyle().
