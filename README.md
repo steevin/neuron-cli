@@ -101,6 +101,13 @@ brew upgrade steevin/tap/neuron
 
 ---
 
+## ❤️ Support this project
+
+If you find Neuron CLI useful, you can help support the development by donating via PayPal:
+[Donate via PayPal](https://paypal.me/steevin)
+
+---
+
 <div align="center">
 Made by Daniel Steevin
 </div>
