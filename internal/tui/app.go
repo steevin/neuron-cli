@@ -9,9 +9,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/spinner"
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/sahilm/fuzzy"
@@ -27,9 +29,10 @@ import (
 type focus int
 
 const (
-	focusSidebar focus = iota
+	focusSidebar  focus = iota
 	focusEditor
 	focusSearch
+	focusNewNote // new: inline note creation mode
 )
 
 // notesLoadedMsg is dispatched when the initial note scan completes.
@@ -41,55 +44,71 @@ type errMsg struct{ err error }
 // statusMsg carries a transient human-readable status update.
 type statusMsg struct{ msg string }
 
+// successMsg carries a success message (shown with green styling).
+type successMsg struct{ msg string }
+
+// pasteNoteMsg is dispatched when a paste-to-note operation completes.
+// It carries the freshly-saved note so the editor can display the new content
+// immediately without a full vault reload.
+type pasteNoteMsg struct {
+	note  *notes.Note
+	bytes int
+}
+
 // Model is the root Bubble Tea model. It owns all child pane models and
 // orchestrates focus, layout, and data flow.
 type Model struct {
-	cfg       *config.Config
-	store     *notes.Store
-	theme     *styles.Theme
-	sidebar   panes.Sidebar
-	editor    panes.Editor
-	search    panes.SearchPane
-	spinner   spinner.Model
-	help      help.Model
-	showHelp  bool
-	syncing   bool
-	focused   focus
-	allNotes  []*notes.Note // unfiltered master list
-	width     int
-	height    int
-	ready      bool // true once the terminal size is known
-	err        error
-	statusMsg  string
-	showSplash bool // controls Gemini-style splash screen
+	cfg           *config.Config
+	store         *notes.Store
+	theme         *styles.Theme
+	sidebar       panes.Sidebar
+	editor        panes.Editor
+	search        panes.SearchPane
+	newNote       textinput.Model // inline new-note input
+	spinner       spinner.Model
+	help          help.Model
+	showHelp      bool
+	syncing       bool
+	focused       focus
+	allNotes      []*notes.Note // unfiltered master list
+	width         int
+	height        int
+	ready         bool // true once the terminal size is known
+	err           error
+	statusMsg     string
+	isSuccess     bool   // whether statusMsg should render green
+	showSplash    bool   // controls splash screen
+	clipboardBody string // clipboard content staged for next note creation
 }
 
 type keyMap struct {
-	Tab    key.Binding
+	Tab   key.Binding
 	Search key.Binding
-	New    key.Binding
-	Edit   key.Binding
-	Sync   key.Binding
-	Graph  key.Binding
-	Help   key.Binding
-	Quit   key.Binding
+	New   key.Binding
+	Paste key.Binding
+	Edit  key.Binding
+	Sync  key.Binding
+	Graph key.Binding
+	Help  key.Binding
+	Quit  key.Binding
 }
 
 func (k keyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Tab, k.Search, k.New, k.Edit, k.Sync, k.Graph, k.Help, k.Quit}
+	return []key.Binding{k.Tab, k.Search, k.New, k.Paste, k.Edit, k.Sync, k.Help, k.Quit}
 }
 
 func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
-		{k.Tab, k.Search, k.New, k.Edit},
-		{k.Sync, k.Graph, k.Help, k.Quit},
+		{k.Tab, k.Search, k.New, k.Paste},
+		{k.Edit, k.Sync, k.Graph, k.Help, k.Quit},
 	}
 }
 
 var keys = keyMap{
 	Tab:    key.NewBinding(key.WithKeys("tab", "shift+tab"), key.WithHelp("tab", "focus")),
-	Search: key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "search")),
-	New:    key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "new")),
+	Search: key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "commands")),
+	New:    key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "new note")),
+	Paste:  key.NewBinding(key.WithKeys("ctrl+v"), key.WithHelp("ctrl+v", "paste clipboard")),
 	Edit:   key.NewBinding(key.WithKeys("e"), key.WithHelp("e", "edit")),
 	Sync:   key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "sync")),
 	Graph:  key.NewBinding(key.WithKeys("g"), key.WithHelp("g", "graph")),
@@ -97,8 +116,12 @@ var keys = keyMap{
 	Quit:   key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
 }
 
-// New constructs a Model from the provided configuration. It sets up the note
-// store, selects the correct theme, and initialises all child pane models.
+// allPaletteCommands is the full list for fuzzy suggestions.
+var allPaletteCommands = []string{
+	"/add", "/today", "/sync", "/stats", "/open", "/edit", "/rm", "/theme", "/help", "/quit",
+}
+
+// New constructs a Model from the provided configuration.
 func New(cfg *config.Config) (*Model, error) {
 	store, err := notes.NewStore(cfg.VaultPath)
 	if err != nil {
@@ -113,19 +136,30 @@ func New(cfg *config.Config) (*Model, error) {
 	editor := panes.NewEditor(theme)
 	search := panes.NewSearchPane(theme)
 
+	// New-note inline input — CharLimit = 0 means unlimited.
+	// The title itself shouldn't be truncated by the widget.
+	nn := textinput.New()
+	nn.Placeholder = "Note title..."
+	nn.CharLimit = 0
+	nn.Width = 50
+	nn.PromptStyle = lipgloss.NewStyle().Foreground(theme.AccentAlt).Bold(true)
+	nn.TextStyle = lipgloss.NewStyle().Foreground(theme.TextBright)
+	nn.PlaceholderStyle = lipgloss.NewStyle().Foreground(theme.Muted)
+
 	s := spinner.New()
 	s.Spinner = spinner.Dot
-	s.Style = lipgloss.NewStyle().Foreground(theme.Muted)
+	s.Style = lipgloss.NewStyle().Foreground(theme.Accent)
 
 	h := help.New()
 
 	return &Model{
-		cfg:     cfg,
-		store:   store,
-		theme:   theme,
-		sidebar: sidebar,
-		editor:  editor,
-		search:  search,
+		cfg:        cfg,
+		store:      store,
+		theme:      theme,
+		sidebar:    sidebar,
+		editor:     editor,
+		search:     search,
+		newNote:    nn,
 		spinner:    s,
 		help:       h,
 		focused:    focusSidebar,
@@ -133,9 +167,12 @@ func New(cfg *config.Config) (*Model, error) {
 	}, nil
 }
 
-// Init loads notes from the store in the background.
+// Init loads notes from the store in the background and enables bracketed
+// paste mode so that pasted text (any length) arrives as a single message
+// instead of being fed character by character to the active input.
 func (m Model) Init() tea.Cmd {
 	return tea.Batch(
+		tea.EnableBracketedPaste, // enables paste → KeyMsg{Paste:true}
 		m.spinner.Tick,
 		func() tea.Msg {
 			noteList, err := m.store.List(notes.ListOptions{})
@@ -158,6 +195,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		m.ready = true
 		m.help.Width = msg.Width
+		m.newNote.Width = msg.Width - 20
 		m.layout()
 
 	case spinner.TickMsg:
@@ -169,15 +207,36 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.allNotes = msg.notes
 		m.sidebar.SetNotes(msg.notes)
 		m.statusMsg = fmt.Sprintf("Loaded %d notes", len(msg.notes))
+		m.isSuccess = false
 
 	case errMsg:
 		m.err = msg.err
-		m.statusMsg = "Error: " + msg.err.Error()
+		m.statusMsg = "✗ " + msg.err.Error()
+		m.isSuccess = false
 		m.syncing = false
 
 	case statusMsg:
 		m.statusMsg = msg.msg
+		m.isSuccess = false
 		m.syncing = false
+
+	case successMsg:
+		m.statusMsg = "✓ " + msg.msg
+		m.isSuccess = true
+		m.syncing = false
+
+	case pasteNoteMsg:
+		// Update the note in-place in allNotes so the sidebar reflects the change.
+		for i, n := range m.allNotes {
+			if n.ID == msg.note.ID {
+				m.allNotes[i] = msg.note
+				break
+			}
+		}
+		// Push the fresh note content to the editor without a full reload.
+		m.editor.SetNote(msg.note)
+		m.statusMsg = fmt.Sprintf("✓ 📋 %s pegados en «%s»", formatBytes(msg.bytes), msg.note.Title)
+		m.isSuccess = true
 
 	case panes.SearchQueryMsg:
 		if strings.HasPrefix(msg.Query, "/") {
@@ -189,7 +248,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(cmds...)
 		}
 		m = m.filterNotes(msg.Query)
-		// After search committed, return focus to sidebar.
 		m.setFocus(focusSidebar)
 
 	case panes.SearchClearMsg:
@@ -197,7 +255,111 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.setFocus(focusSidebar)
 
 	case tea.KeyMsg:
-		// Global shortcuts that work regardless of focus.
+		// ── Bracketed paste (Cmd+V / ctrl+V / right-click) ──────────────
+		// Bracketed paste mode is enabled in Init(). ALL pasted content
+		// arrives as a single KeyMsg with Paste=true — no length limit.
+		if msg.Paste {
+			text := string(msg.Runes)
+			// Normalize carriage returns to standard newlines to preserve formatting
+			// while preventing terminal layout issues.
+			text = strings.ReplaceAll(text, "\r\n", "\n")
+			text = strings.ReplaceAll(text, "\r", "\n")
+			
+			if text == "" {
+				break
+			}
+			switch m.focused {
+			case focusNewNote:
+				// Stage as note body
+				m.clipboardBody = text
+				// Auto-fill the title input with the first line if it's currently empty
+				if strings.TrimSpace(m.newNote.Value()) == "" {
+					lines := strings.Split(strings.TrimSpace(text), "\n")
+					if len(lines) > 0 {
+						title := lines[0]
+						if len([]rune(title)) > 40 {
+							title = string([]rune(title)[:40]) + "..."
+						}
+						m.newNote.SetValue(title)
+					}
+				}
+			case focusSidebar, focusEditor:
+				// Immediate feedback
+				m.statusMsg = fmt.Sprintf("📋 Pegando %s...", formatBytes(len(text)))
+				m.isSuccess = false
+				cmds = append(cmds, m.pasteTextToSelectedNote(text))
+			}
+			return m, tea.Batch(cmds...)
+		}
+
+		// ── New-note mode ────────────────────────────────────────────────
+		if m.focused == focusNewNote {
+			switch {
+			case msg.Type == tea.KeyEnter:
+				title := strings.TrimSpace(m.newNote.Value())
+				body := m.clipboardBody
+				
+				// Fallback auto-title if input is still empty somehow
+				if title == "" && body != "" {
+					lines := strings.Split(strings.TrimSpace(body), "\n")
+					if len(lines) > 0 {
+						title = lines[0]
+						if len([]rune(title)) > 40 {
+							title = string([]rune(title)[:40]) + "..."
+						}
+					}
+				}
+
+				m.newNote.SetValue("")
+				m.clipboardBody = ""
+				m.setFocus(focusSidebar)
+				
+				if title == "" {
+					m.statusMsg = "Cancelled — note needs a title"
+					m.isSuccess = false
+					return m, tea.Batch(cmds...)
+				}
+				_, err := m.store.Create(title, nil, body)
+				if err != nil {
+					m.statusMsg = "✗ " + err.Error()
+					m.isSuccess = false
+					return m, tea.Batch(cmds...)
+				}
+				if body != "" {
+					m.statusMsg = fmt.Sprintf("✓ Creada: %s  ·  📋 %s pegados", title, formatBytes(len(body)))
+				} else {
+					m.statusMsg = "✓ Created: " + title
+				}
+				m.isSuccess = true
+				cmds = append(cmds, m.reloadNotes())
+				return m, tea.Batch(cmds...)
+
+			case msg.Type == tea.KeyEsc:
+				m.newNote.SetValue("")
+				m.clipboardBody = ""
+				m.setFocus(focusSidebar)
+				m.statusMsg = "Cancelled"
+				m.isSuccess = false
+				return m, tea.Batch(cmds...)
+
+			// ctrl+v fallback for terminals without bracketed paste support
+			case msg.String() == "ctrl+v":
+				text, err := clipboard.ReadAll()
+				if err != nil || text == "" {
+					m.statusMsg = "✗ Clipboard vacío o no disponible"
+					m.isSuccess = false
+					return m, tea.Batch(cmds...)
+				}
+				m.clipboardBody = text
+				return m, tea.Batch(cmds...)
+			}
+			var cmd tea.Cmd
+			m.newNote, cmd = m.newNote.Update(msg)
+			cmds = append(cmds, cmd)
+			return m, tea.Batch(cmds...)
+		}
+
+		// ── Global shortcuts ─────────────────────────────────────────────
 		switch msg.String() {
 		case "ctrl+c", "q":
 			if m.focused != focusSearch {
@@ -236,7 +398,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "n":
 			if m.focused != focusSearch {
-				m.statusMsg = "New note: open your vault directory and create a .md file"
+				m.clipboardBody = ""
+				m.setFocus(focusNewNote)
+				m.newNote.SetValue("")
+				m.newNote.Focus()
+				m.statusMsg = ""
+				m.isSuccess = false
+			}
+
+		// ctrl+v global: paste clipboard into the selected note (append)
+		case "ctrl+v":
+			if m.focused == focusSidebar || m.focused == focusEditor {
+				cmds = append(cmds, m.pasteClipboardToSelectedNote())
 			}
 
 		case "e":
@@ -250,17 +423,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "g":
 			if m.focused != focusSearch {
 				m.statusMsg = m.renderGraphSummary()
+				m.isSuccess = false
 			}
 
 		case "s":
 			if m.focused != focusSearch {
 				m.syncing = true
 				m.statusMsg = "Syncing..."
+				m.isSuccess = false
 				cmds = append(cmds, m.syncCmd())
 			}
 		}
 
-		// Hide splash screen on any key press (except resizing/internal messages handled earlier)
+		// Hide splash screen on any key press
 		if m.showSplash {
 			m.showSplash = false
 		}
@@ -273,7 +448,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.sidebar, cmd = m.sidebar.Update(msg)
 		cmds = append(cmds, cmd)
 
-		// Keep editor in sync with the highlighted note.
 		if selected := m.sidebar.SelectedNote(); selected != nil {
 			m.editor.SetNote(selected)
 		}
@@ -293,14 +467,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 // View renders the full three-pane layout.
-//
-//	┌──────────────────────────────────────────────────────────┐
-//	│  🧠 neuron                      [?] help  [q] quit       │
-//	├───────────────────┬──────────────────────────────────────┤
-//	│   SIDEBAR (30%)   │   EDITOR / PREVIEW (70%)             │
-//	├───────────────────┴──────────────────────────────────────┤
-//	│  / search...                         42 notes | 8 tags   │
-//	└──────────────────────────────────────────────────────────┘
 func (m Model) View() string {
 	if !m.ready {
 		return "\n  Initialising…"
@@ -310,12 +476,12 @@ func (m Model) View() string {
 	}
 
 	titleBar := m.renderTitleBar()
-	
+
 	editorView := m.editor.View()
 	if m.showSplash {
 		editorView = m.editor.SplashView(len(m.allNotes), m.countUniqueTags())
 	}
-	
+
 	middle := lipgloss.JoinHorizontal(lipgloss.Top,
 		m.sidebar.View(),
 		editorView,
@@ -359,23 +525,46 @@ func (m *Model) layout() {
 	m.search.SetWidth(m.width)
 }
 
-// setFocus moves keyboard focus to the named pane, updating the focused flag
-// on each child pane accordingly.
+// setFocus moves keyboard focus to the named pane.
 func (m *Model) setFocus(f focus) {
 	m.focused = f
 	m.sidebar.SetFocused(f == focusSidebar)
 	m.editor.SetFocused(f == focusEditor)
 	m.search.SetActive(f == focusSearch)
+	if f != focusNewNote {
+		m.newNote.Blur()
+	}
 }
 
 func (m Model) renderTitleBar() string {
+	// Mode label
+	var modeLabel string
+	switch m.focused {
+	case focusNewNote:
+		modeLabel = m.theme.ModeIndicator.
+			Background(m.theme.AccentAlt).
+			Foreground(m.theme.Background).
+			Render(" ✦ NEW NOTE ")
+	case focusSearch:
+		modeLabel = m.theme.ModeIndicator.
+			Background(m.theme.Accent).
+			Render(" ⌕ SEARCH ")
+	case focusEditor:
+		modeLabel = m.theme.ModeIndicator.
+			Background(m.theme.Muted).
+			Render(" ⊞ PREVIEW ")
+	}
+
 	leftStyle := m.theme.AppName.Background(m.theme.Surface)
 	left := leftStyle.Render(" 🧠 neuron")
+	if modeLabel != "" {
+		left = left + "  " + modeLabel
+	}
 
 	rightStyle := m.theme.KeyHint.
 		Foreground(m.theme.Muted).
 		Background(m.theme.Surface)
-	right := rightStyle.Render("[?] help  [q] quit ")
+	right := rightStyle.Render("[n] new  [/] cmd  [?] help  [q] quit ")
 
 	spacerWidth := m.width - lipgloss.Width(left) - lipgloss.Width(right)
 	if spacerWidth < 0 {
@@ -396,33 +585,87 @@ func (m Model) renderTitleBar() string {
 
 func (m Model) renderStatusBar() string {
 	var left string
-	if m.focused == focusSearch {
+
+	switch m.focused {
+	case focusNewNote:
+		// Show the inline new-note input
+		prompt := m.theme.NewNoteInput.Render(" ✦ New note → ")
+		inputView := m.theme.StatusBar.Render(m.newNote.View())
+
+		// Clipboard indicator: show size badge if content is staged, hint otherwise
+		var clipIndicator string
+		if m.clipboardBody != "" {
+			// Preview first ~30 chars of the clipboard
+			preview := strings.ReplaceAll(m.clipboardBody, "\n", " ")
+			if len([]rune(preview)) > 30 {
+				preview = string([]rune(preview)[:30]) + "…"
+			}
+			clipIndicator = "  " + lipgloss.NewStyle().
+				Foreground(m.theme.Background).
+				Background(m.theme.AccentAlt).
+				Bold(true).
+				Padding(0, 1).
+				Render(fmt.Sprintf("📋 %s listo", formatBytes(len(m.clipboardBody)))) +
+				"  " + lipgloss.NewStyle().
+				Foreground(m.theme.Muted).
+				Render("\""+preview+"\"")
+		} else {
+			clipIndicator = "  " + lipgloss.NewStyle().
+				Foreground(m.theme.Muted).
+				Render("[ctrl+v] pegar clipboard · [esc] cancelar")
+		}
+
+		left = lipgloss.JoinHorizontal(lipgloss.Left,
+			m.theme.StatusBar.Render(prompt),
+			inputView,
+			m.theme.StatusBar.Render(clipIndicator),
+		)
+
+	case focusSearch:
 		query := m.search.Query()
 		if strings.HasPrefix(query, "/") {
-			// Show command palette suggestions
-			suggestions := []string{"/add", "/today", "/sync", "/stats", "/quit"}
-			matches := fuzzy.Find(query, suggestions)
-			var filtered []string
+			// Show command palette with fuzzy suggestions as chips
+			matches := fuzzy.Find(query, allPaletteCommands)
+			var chips []string
 			for _, match := range matches {
-				filtered = append(filtered, match.Str)
+				chip := lipgloss.NewStyle().
+					Foreground(m.theme.Info).
+					Background(m.theme.Surface2).
+					Padding(0, 1).
+					Render(match.Str)
+				chips = append(chips, chip)
 			}
-			sugStr := strings.Join(filtered, "  ")
-			if sugStr == "" {
-				sugStr = "No commands found"
+			chipRow := ""
+			if len(chips) > 0 {
+				chipRow = " " + strings.Join(chips, " ")
+			} else {
+				chipRow = lipgloss.NewStyle().
+					Foreground(m.theme.Muted).
+					Render("  No matching commands")
 			}
-			sugStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#73daca")).PaddingLeft(2)
-			left = m.search.View() + sugStyle.Render(sugStr)
+			left = m.search.View() + chipRow
 		} else {
 			left = m.search.View()
 		}
-	} else if m.statusMsg != "" {
-		msg := m.statusMsg
-		if m.syncing {
-			msg = m.spinner.View() + " " + msg
+
+	default:
+		if m.statusMsg != "" {
+			msg := m.statusMsg
+			if m.syncing {
+				msg = m.spinner.View() + " " + msg
+				left = m.theme.StatusBar.Render(" " + msg)
+			} else if m.isSuccess {
+				left = m.theme.SuccessMsg.Render(msg)
+			} else {
+				left = m.theme.StatusBar.Render(" " + msg)
+			}
+		} else {
+			hint := lipgloss.NewStyle().
+				Foreground(m.theme.Muted).
+				Background(m.theme.Surface).
+				Render(" [n] new  [ctrl+v] pegar en nota  [/] comandos  [e] edit  [s] sync  [g] graph")
+			left = hint
 		}
-		left = m.theme.StatusBar.Render(" " + msg)
-	} else {
-		left = m.theme.StatusBar.Render(m.search.View())
 	}
 
 	noteCount := len(m.allNotes)
@@ -443,16 +686,22 @@ func (m Model) renderStatusBar() string {
 }
 
 func (m *Model) handlePaletteCommand(cmdStr string) tea.Cmd {
-	parts := strings.Split(cmdStr, " ")
+	parts := strings.Fields(cmdStr)
+	if len(parts) == 0 {
+		return nil
+	}
 	base := parts[0]
 
 	switch base {
 	case "/quit", "/q":
 		return tea.Quit
+
 	case "/sync", "/s":
 		m.syncing = true
 		m.statusMsg = "Syncing..."
+		m.isSuccess = false
 		return m.syncCmd()
+
 	case "/today", "/t":
 		title := "Daily " + time.Now().Format("2006-01-02")
 		_, err := m.store.Get(title)
@@ -463,33 +712,110 @@ func (m *Model) handlePaletteCommand(cmdStr string) tea.Cmd {
 			}
 			_, err = m.store.Create(title, []string{"daily"}, content)
 			if err != nil {
-				m.statusMsg = "Error creating daily note: " + err.Error()
+				m.statusMsg = "✗ Error creating daily note: " + err.Error()
+				m.isSuccess = false
 				return nil
 			}
 		}
-		// Select it in the sidebar
-		m.statusMsg = "Opened daily note"
-		// Trigger notes reload
-		return m.Init()
+		m.statusMsg = "✓ Daily note ready"
+		m.isSuccess = true
+		return m.reloadNotes()
+
 	case "/add", "/a":
 		if len(parts) < 2 {
 			m.statusMsg = "Usage: /add <title>"
+			m.isSuccess = false
 			return nil
 		}
 		title := strings.Join(parts[1:], " ")
 		_, err := m.store.Create(title, nil, "")
 		if err != nil {
-			m.statusMsg = "Error creating note: " + err.Error()
+			m.statusMsg = "✗ " + err.Error()
+			m.isSuccess = false
 			return nil
 		}
-		m.statusMsg = "Created note: " + title
-		return m.Init()
+		m.statusMsg = "✓ Created: " + title
+		m.isSuccess = true
+		return m.reloadNotes()
+
 	case "/stats":
-		m.statusMsg = fmt.Sprintf("Stats: %d notes, %d tags", len(m.allNotes), m.countUniqueTags())
+		count := len(m.allNotes)
+		tags := m.countUniqueTags()
+		m.statusMsg = fmt.Sprintf("Vault: %d notes · %d tags", count, tags)
+		m.isSuccess = false
 		return nil
+
+	case "/open", "/o":
+		go func() { //nolint:errcheck
+			exec.Command("open", "--", m.cfg.VaultPath).Run()
+		}()
+		m.statusMsg = "✓ Opened vault in Finder"
+		m.isSuccess = true
+		return nil
+
+	case "/edit", "/e":
+		return m.openInEditor()
+
+	case "/rm":
+		note := m.sidebar.SelectedNote()
+		if note == nil {
+			m.statusMsg = "✗ No note selected"
+			m.isSuccess = false
+			return nil
+		}
+		if err := m.store.Delete(note.ID); err != nil {
+			m.statusMsg = "✗ " + err.Error()
+			m.isSuccess = false
+			return nil
+		}
+		m.statusMsg = "✓ Deleted: " + note.Title
+		m.isSuccess = true
+		return m.reloadNotes()
+
+	case "/theme":
+		if len(parts) < 2 {
+			m.statusMsg = "Usage: /theme dark|light"
+			m.isSuccess = false
+			return nil
+		}
+		newTheme := parts[1]
+		if newTheme != "dark" && newTheme != "light" {
+			m.statusMsg = "✗ Theme must be dark or light"
+			m.isSuccess = false
+			return nil
+		}
+		m.cfg.Theme = newTheme
+		m.theme = styles.GetTheme(newTheme)
+		m.sidebar = panes.NewSidebar(m.theme)
+		m.sidebar.SetFocused(true)
+		m.editor = panes.NewEditor(m.theme)
+		m.search = panes.NewSearchPane(m.theme)
+		m.layout()
+		m.sidebar.SetNotes(m.allNotes)
+		m.statusMsg = "✓ Theme changed to " + newTheme
+		m.isSuccess = true
+		return nil
+
+	case "/help", "/?":
+		m.showHelp = true
+		return nil
+
 	default:
-		m.statusMsg = "Unknown command: " + base
+		m.statusMsg = "Unknown command: " + base + "  (try /add /today /sync /stats /open /edit /rm /theme /quit)"
+		m.isSuccess = false
 		return nil
+	}
+}
+
+// reloadNotes fetches the note list from disk and updates the sidebar.
+func (m *Model) reloadNotes() tea.Cmd {
+	store := m.store
+	return func() tea.Msg {
+		noteList, err := store.List(notes.ListOptions{})
+		if err != nil {
+			return errMsg{err: err}
+		}
+		return notesLoadedMsg{notes: noteList}
 	}
 }
 
@@ -497,7 +823,8 @@ func (m *Model) handlePaletteCommand(cmdStr string) tea.Cmd {
 func (m *Model) openInEditor() tea.Cmd {
 	note := m.sidebar.SelectedNote()
 	if note == nil {
-		m.statusMsg = "No note selected"
+		m.statusMsg = "✗ No note selected"
+		m.isSuccess = false
 		return nil
 	}
 
@@ -512,7 +839,6 @@ func (m *Model) openInEditor() tea.Cmd {
 		}
 	}
 
-	// Sanitize editor input
 	editorParts := strings.Fields(editor)
 	if len(editorParts) > 0 {
 		editor = editorParts[0]
@@ -524,7 +850,7 @@ func (m *Model) openInEditor() tea.Cmd {
 		if err != nil {
 			return errMsg{err: fmt.Errorf("editor: %w", err)}
 		}
-		return statusMsg{msg: "Returned from editor"}
+		return successMsg{msg: "Returned from editor"}
 	})
 }
 
@@ -539,24 +865,12 @@ func (m *Model) syncCmd() tea.Cmd {
 		if err != nil {
 			return errMsg{err: fmt.Errorf("sync: %w", err)}
 		}
-
-		// After a successful sync, reload notes in case files changed.
-		store, storeErr := notes.NewStore(vaultPath)
-		if storeErr != nil {
-			return statusMsg{msg: result.Message}
-		}
-		noteList, listErr := store.List(notes.ListOptions{})
-		if listErr != nil {
-			return statusMsg{msg: result.Message}
-		}
-		// Return notes loaded so the sidebar refreshes, then show sync message.
-		_ = noteList
-		return statusMsg{msg: result.Message}
+		return successMsg{msg: result.Message}
 	}
 }
 
-// filterNotes returns a new Model with the sidebar filtered to notes whose
-// title or tags contain the query string (case-insensitive).
+// filterNotes returns a new Model with the sidebar filtered to notes matching
+// the query string (case-insensitive title/tag match).
 func (m Model) filterNotes(query string) Model {
 	if query == "" {
 		m.sidebar.SetNotes(m.allNotes)
@@ -578,6 +892,7 @@ func (m Model) filterNotes(query string) Model {
 	}
 	m.sidebar.SetNotes(filtered)
 	m.statusMsg = fmt.Sprintf("Found %d notes matching %q", len(filtered), query)
+	m.isSuccess = false
 	return m
 }
 
@@ -590,7 +905,7 @@ func (m Model) renderGraphSummary() string {
 	for _, n := range m.allNotes {
 		totalLinks += len(n.Links)
 	}
-	return fmt.Sprintf("Knowledge graph: %d nodes, %d edges", len(m.allNotes), totalLinks)
+	return fmt.Sprintf("Knowledge graph: %d nodes · %d edges", len(m.allNotes), totalLinks)
 }
 
 // countUniqueTags returns the number of distinct tags across all notes.
@@ -604,9 +919,78 @@ func (m Model) countUniqueTags() int {
 	return len(seen)
 }
 
-// helpText returns a single-line summary of available keybindings.
-func helpText() string {
-	return "[tab] focus  [/] search  [n] new  [e] edit  [s] sync  [g] graph  [?] help  [q] quit"
+// pasteClipboardToSelectedNote reads the system clipboard and appends its
+// full contents to the currently selected note, then saves it to disk.
+func (m *Model) pasteClipboardToSelectedNote() tea.Cmd {
+	note := m.sidebar.SelectedNote()
+	if note == nil {
+		m.statusMsg = "✗ No note selected — select one first"
+		m.isSuccess = false
+		return nil
+	}
+	store := m.store
+
+	return func() tea.Msg {
+		text, err := clipboard.ReadAll()
+		if err != nil || text == "" {
+			return errMsg{err: fmt.Errorf("clipboard vacío o no disponible")}
+		}
+		return appendTextToNote(store, note, text)
+	}
+}
+
+// pasteTextToSelectedNote appends the given text to the selected note on disk.
+// Used when the content arrives via bracketed paste (msg.Paste == true).
+func (m *Model) pasteTextToSelectedNote(text string) tea.Cmd {
+	note := m.sidebar.SelectedNote()
+	if note == nil {
+		return func() tea.Msg {
+			return errMsg{err: fmt.Errorf("no note selected — navigate to one first")}
+		}
+	}
+	store := m.store
+
+	return func() tea.Msg {
+		return appendTextToNote(store, note, text)
+	}
+}
+
+// appendTextToNote is the shared logic for both paste helpers.
+// It re-reads the note from disk, appends the text, saves and returns a
+// pasteNoteMsg so the editor can refresh without a full vault reload.
+func appendTextToNote(store *notes.Store, note *notes.Note, text string) tea.Msg {
+	// Re-read from disk to get the freshest content.
+	fresh, err := store.Get(note.ID)
+	if err != nil {
+		fresh = note
+	}
+
+	// Append after a blank separator line.
+	// We use fresh.Content (the body without frontmatter) so we don't duplicate YAML.
+	sep := "\n\n"
+	if fresh.Content == "" {
+		sep = ""
+	}
+	fresh.Content = fresh.Content + sep + text
+
+	if err := store.Update(fresh); err != nil {
+		return errMsg{err: fmt.Errorf("saving note: %w", err)}
+	}
+
+	return pasteNoteMsg{note: fresh, bytes: len(text)}
+}
+
+
+// formatBytes returns a human-readable byte size string (B / KB / MB).
+func formatBytes(n int) string {
+	switch {
+	case n < 1024:
+		return fmt.Sprintf("%d B", n)
+	case n < 1024*1024:
+		return fmt.Sprintf("%.1f KB", float64(n)/1024)
+	default:
+		return fmt.Sprintf("%.1f MB", float64(n)/(1024*1024))
+	}
 }
 
 // Run constructs the root model and starts the Bubble Tea program.

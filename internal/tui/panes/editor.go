@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os/user"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -32,6 +33,7 @@ func NewEditor(theme *styles.Theme) Editor {
 	renderer, _ := glamour.NewTermRenderer(
 		glamour.WithAutoStyle(),
 		glamour.WithWordWrap(80),
+		glamour.WithPreservedNewLines(),
 	)
 
 	vp := viewport.New(0, 0)
@@ -85,24 +87,33 @@ func (e *Editor) SetNote(note *notes.Note) {
 	e.refreshContent()
 }
 
+// RefreshNote force-re-renders the current note content into the viewport.
+// Call this after the underlying file has been modified externally (e.g. paste).
+func (e *Editor) RefreshNote() {
+	e.refreshContent()
+}
+
 func (e *Editor) SetSize(width, height int) {
 	e.width = width
 	e.height = height
 
-	bodyHeight := height - 3
+	// Reserve 2 rows: 1 header border + 1 scroll hint.
+	bodyHeight := height - 2
 	if bodyHeight < 1 {
 		bodyHeight = 1
 	}
 	e.viewport.Width = width
 	e.viewport.Height = bodyHeight
 
-	wrapWidth := width - 4
+	// Word wrap at viewport width minus a small margin so text never overflows.
+	wrapWidth := width - 6
 	if wrapWidth < 20 {
 		wrapWidth = 20
 	}
 	if r, err := glamour.NewTermRenderer(
 		glamour.WithAutoStyle(),
 		glamour.WithWordWrap(wrapWidth),
+		glamour.WithPreservedNewLines(),
 	); err == nil {
 		e.renderer = r
 	}
@@ -133,7 +144,16 @@ func (e *Editor) renderHeader() string {
 		Background(e.theme.Surface).
 		Padding(0, 0)
 
-	title := titleStyle.Render(e.note.Title)
+	// Note icon based on type
+	icon := "📝 "
+	for _, t := range e.note.Tags {
+		if t == "daily" {
+			icon = "📅 "
+			break
+		}
+	}
+
+	title := titleStyle.Render(icon + e.note.Title)
 
 	updated := "updated " + formatRelativeTime(e.note.Updated)
 	tagParts := make([]string, 0, len(e.note.Tags))
@@ -144,7 +164,7 @@ func (e *Editor) renderHeader() string {
 
 	meta := metaStyle.Render(updated)
 	if tags != "" {
-		meta = metaStyle.Render(updated + "   " + tags)
+		meta = metaStyle.Render(updated+"   ") + tags
 	}
 
 	bar := lipgloss.NewStyle().
@@ -158,10 +178,12 @@ func (e *Editor) renderHeader() string {
 
 // emptyState returns a full-pane message when no note is selected.
 func (e *Editor) emptyState() string {
-	msg := lipgloss.NewStyle().
-		Foreground(e.theme.Muted).
-		Bold(false).
-		Render("Select a note to preview  ↑/↓ to navigate")
+	lines := []string{
+		lipgloss.NewStyle().Foreground(e.theme.Muted).Render("No note selected"),
+		"",
+		lipgloss.NewStyle().Foreground(e.theme.Muted).Italic(true).Render("↑ ↓  navigate   Enter  select"),
+	}
+	msg := strings.Join(lines, "\n")
 
 	return lipgloss.NewStyle().
 		Width(e.width).
@@ -189,23 +211,30 @@ func (e *Editor) refreshContent() {
 	e.viewport.GotoTop()
 }
 
-// SplashView returns a Gemini-style splash screen with a logo and user stats.
+// SplashView returns a premium splash screen shown on first launch.
 func (e *Editor) SplashView(noteCount, tagCount int) string {
-	logoStr := `
-       🧠
+	// ASCII art logo
+	logoLines := []string{
+		"  ███╗   ██╗███████╗██╗   ██╗██████╗  ██████╗ ███╗   ██╗",
+		"  ████╗  ██║██╔════╝██║   ██║██╔══██╗██╔═══██╗████╗  ██║",
+		"  ██╔██╗ ██║█████╗  ██║   ██║██████╔╝██║   ██║██╔██╗ ██║",
+		"  ██║╚██╗██║██╔══╝  ██║   ██║██╔══██╗██║   ██║██║╚██╗██║",
+		"  ██║ ╚████║███████╗╚██████╔╝██║  ██║╚██████╔╝██║ ╚████║",
+		"  ╚═╝  ╚═══╝╚══════╝ ╚═════╝ ╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═══╝",
+	}
 
- _   _ 
-| \ | | ___ _   _ _ __ ___  _ __ 
-|  \| |/ _ \ | | | '__/ _ \| '_ \ 
-| |\  |  __/ |_| | | | (_) | | | |
-|_| \_|\___|\__,_|_|  \___/|_| |_|
-`
 	logo := lipgloss.NewStyle().
 		Foreground(e.theme.Accent).
 		Bold(true).
-		Render(logoStr)
+		Render(strings.Join(logoLines, "\n"))
 
-	userName := "User"
+	tagline := lipgloss.NewStyle().
+		Foreground(e.theme.Muted).
+		Italic(true).
+		Render("  your second brain, from the terminal")
+
+	// User greeting
+	userName := "there"
 	if u, err := user.Current(); err == nil {
 		if u.Name != "" {
 			userName = u.Name
@@ -217,19 +246,75 @@ func (e *Editor) SplashView(noteCount, tagCount int) string {
 	welcome := lipgloss.NewStyle().
 		Foreground(e.theme.TextBright).
 		Bold(true).
-		Render(fmt.Sprintf("Hello, %s", userName))
+		Render(fmt.Sprintf("Hello, %s 👋", userName))
 
-	stats := lipgloss.NewStyle().
-		Foreground(e.theme.Muted).
-		Render(fmt.Sprintf("%d notes  ·  %d tags", noteCount, tagCount))
-		
+	// Stats badges
+	notesBadge := lipgloss.NewStyle().
+		Foreground(e.theme.Background).
+		Background(e.theme.Accent).
+		Bold(true).
+		Padding(0, 1).
+		Render(fmt.Sprintf(" %d notes", noteCount))
+
+	tagsBadge := lipgloss.NewStyle().
+		Foreground(e.theme.Background).
+		Background(e.theme.AccentAlt).
+		Bold(true).
+		Padding(0, 1).
+		Render(fmt.Sprintf(" %d tags", tagCount))
+
+	stats := lipgloss.JoinHorizontal(lipgloss.Center, notesBadge, "  ", tagsBadge)
+
+	// Keybinding chips
+	type chip struct{ key, desc string }
+	chips := []chip{
+		{"n", "new note"},
+		{"ctrl+v", "paste clipboard"},
+		{"/", "commands"},
+		{"e", "edit"},
+		{"s", "sync"},
+		{"?", "help"},
+	}
+
+	var chipParts []string
+	for _, c := range chips {
+		k := lipgloss.NewStyle().
+			Foreground(e.theme.Background).
+			Background(e.theme.Muted).
+			Bold(true).
+			Padding(0, 1).
+			Render(c.key)
+		d := lipgloss.NewStyle().
+			Foreground(e.theme.Muted).
+			Render(" " + c.desc)
+		chipParts = append(chipParts, k+d)
+	}
+
+	keyRow1 := lipgloss.JoinHorizontal(lipgloss.Center,
+		chipParts[0], "   ", chipParts[1], "   ", chipParts[2])
+	keyRow2 := lipgloss.JoinHorizontal(lipgloss.Center,
+		chipParts[3], "   ", chipParts[4], "   ", chipParts[5])
+
 	instruction := lipgloss.NewStyle().
-		Foreground(e.theme.AccentAlt).
-		Render("Press any key to enter vault")
+		Foreground(e.theme.Info).
+		Render("Press any key to enter vault →")
 
-	right := lipgloss.JoinVertical(lipgloss.Left, welcome, stats, "", instruction)
-
-	content := lipgloss.JoinHorizontal(lipgloss.Center, logo, "    ", right)
+	content := lipgloss.JoinVertical(lipgloss.Center,
+		logo,
+		"",
+		tagline,
+		"",
+		"",
+		welcome,
+		"",
+		stats,
+		"",
+		"",
+		keyRow1,
+		"  "+keyRow2,
+		"",
+		instruction,
+	)
 
 	return lipgloss.NewStyle().
 		Width(e.width).
@@ -237,4 +322,20 @@ func (e *Editor) SplashView(noteCount, tagCount int) string {
 		Align(lipgloss.Center, lipgloss.Center).
 		Background(e.theme.Background).
 		Render(content)
+}
+
+func formatRelativeTime(t time.Time) string {
+	d := time.Since(t)
+	switch {
+	case d < time.Minute:
+		return "just now"
+	case d < time.Hour:
+		return fmt.Sprintf("%dm ago", int(d.Minutes()))
+	case d < 24*time.Hour:
+		return fmt.Sprintf("%dh ago", int(d.Hours()))
+	case d < 7*24*time.Hour:
+		return fmt.Sprintf("%dd ago", int(d.Hours()/24))
+	default:
+		return t.Format("Jan 02")
+	}
 }

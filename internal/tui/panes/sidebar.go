@@ -5,7 +5,6 @@ package panes
 import (
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
@@ -21,14 +20,26 @@ type NoteItem struct {
 }
 
 func (n NoteItem) FilterValue() string { return n.Note.Title }
-func (n NoteItem) Title() string       { return n.Note.Title }
+func (n NoteItem) Title() string {
+	// Prefix note title with a type icon
+	for _, t := range n.Note.Tags {
+		if t == "daily" {
+			return "📅 " + n.Note.Title
+		}
+	}
+	return "📝 " + n.Note.Title
+}
 
 // Description returns a compact secondary line containing up to three tags and
 // a human-readable relative timestamp, e.g. "#go #tui  •  3h ago".
 func (n NoteItem) Description() string {
+	max := 3
+	if len(n.Note.Tags) < max {
+		max = len(n.Note.Tags)
+	}
 	tags := ""
 	if len(n.Note.Tags) > 0 {
-		tags = "#" + strings.Join(n.Note.Tags[:minInt(3, len(n.Note.Tags))], " #") + "  •  "
+		tags = "#" + strings.Join(n.Note.Tags[:max], " #") + "  •  "
 	}
 	return tags + formatRelativeTime(n.Note.Updated)
 }
@@ -93,16 +104,24 @@ func (s Sidebar) View() string {
 		borderStyle = borderStyle.BorderForeground(s.theme.Accent)
 	}
 
+	// Header: show focused indicator
+	headerTitle := " 🧠 VAULT"
+	if s.focused {
+		headerTitle = " 🧠 VAULT"
+	}
 	header := s.theme.TitleBar.
 		Width(s.width - 2). // account for border
-		Render(" 🧠 NOTES")
+		Render(headerTitle)
 
 	body := s.list.View()
 
 	count := len(s.list.Items())
 	footerText := fmt.Sprintf(" %d notes", count)
-	footer := s.theme.StatusBar.
+	footer := lipgloss.NewStyle().
+		Foreground(s.theme.Muted).
+		Background(s.theme.Surface).
 		Width(s.width - 2).
+		Padding(0, 1).
 		Render(footerText)
 
 	inner := lipgloss.JoinVertical(lipgloss.Left, header, body, footer)
@@ -139,26 +158,4 @@ func (s Sidebar) SelectedNote() *notes.Note {
 	return ni.Note
 }
 
-func formatRelativeTime(t time.Time) string {
-	d := time.Since(t)
-	switch {
-	case d < time.Minute:
-		return "just now"
-	case d < time.Hour:
-		return fmt.Sprintf("%dm ago", int(d.Minutes()))
-	case d < 24*time.Hour:
-		return fmt.Sprintf("%dh ago", int(d.Hours()))
-	case d < 7*24*time.Hour:
-		return fmt.Sprintf("%dd ago", int(d.Hours()/24))
-	default:
-		return t.Format("Jan 02")
-	}
-}
 
-// minInt returns the smaller of two ints.
-func minInt(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}

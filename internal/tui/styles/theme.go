@@ -7,6 +7,7 @@ import "github.com/charmbracelet/lipgloss"
 type Theme struct {
 	Background lipgloss.Color
 	Surface    lipgloss.Color
+	Surface2   lipgloss.Color // slightly elevated surface for overlays
 	Border     lipgloss.Color
 	Muted      lipgloss.Color
 	Text       lipgloss.Color
@@ -16,6 +17,8 @@ type Theme struct {
 	AccentAlt lipgloss.Color // secondary accent (green)
 	Warning   lipgloss.Color
 	Error     lipgloss.Color
+	Success   lipgloss.Color
+	Info      lipgloss.Color
 
 	TitleBar        lipgloss.Style
 	SidebarItem     lipgloss.Style
@@ -28,6 +31,12 @@ type Theme struct {
 	Separator       lipgloss.Style
 	KeyHint         lipgloss.Style
 	AppName         lipgloss.Style
+	CommandPalette  lipgloss.Style
+	NewNoteInput    lipgloss.Style
+	Badge           lipgloss.Style
+	ModeIndicator   lipgloss.Style
+	SuccessMsg      lipgloss.Style
+	ErrorMsg        lipgloss.Style
 }
 
 func buildStyles(t Theme) *Theme {
@@ -89,22 +98,59 @@ func buildStyles(t Theme) *Theme {
 		Foreground(t.Accent).
 		Background(t.Surface)
 
+	t.CommandPalette = lipgloss.NewStyle().
+		Foreground(t.Info).
+		Background(t.Surface2).
+		Padding(0, 1)
+
+	t.NewNoteInput = lipgloss.NewStyle().
+		Foreground(t.TextBright).
+		Background(t.Surface).
+		Bold(true)
+
+	t.Badge = lipgloss.NewStyle().
+		Foreground(t.Background).
+		Background(t.AccentAlt).
+		Bold(true).
+		Padding(0, 1)
+
+	t.ModeIndicator = lipgloss.NewStyle().
+		Foreground(t.Background).
+		Background(t.Accent).
+		Bold(true).
+		Padding(0, 1)
+
+	t.SuccessMsg = lipgloss.NewStyle().
+		Foreground(t.Success).
+		Background(t.Surface).
+		Bold(true).
+		Padding(0, 1)
+
+	t.ErrorMsg = lipgloss.NewStyle().
+		Foreground(t.Error).
+		Background(t.Surface).
+		Bold(true).
+		Padding(0, 1)
+
 	return &t
 }
 
-// DarkTheme returns a dark theme based on GitHub's dark palette.
+// DarkTheme returns a premium dark theme based on Tokyo Night.
 func DarkTheme() *Theme {
 	t := Theme{
-		Background: lipgloss.Color("#0d1117"),
-		Surface:    lipgloss.Color("#161b22"),
-		Border:     lipgloss.Color("#30363d"),
-		Muted:      lipgloss.Color("#8b949e"),
-		Text:       lipgloss.Color("#c9d1d9"),
-		TextBright: lipgloss.Color("#f0f6fc"),
-		Accent:     lipgloss.Color("#58a6ff"),
-		AccentAlt:  lipgloss.Color("#3fb950"),
-		Warning:    lipgloss.Color("#d29922"),
-		Error:      lipgloss.Color("#f85149"),
+		Background: lipgloss.Color("#1a1b26"),
+		Surface:    lipgloss.Color("#24283b"),
+		Surface2:   lipgloss.Color("#2a2f45"),
+		Border:     lipgloss.Color("#414868"),
+		Muted:      lipgloss.Color("#565f89"),
+		Text:       lipgloss.Color("#a9b1d6"),
+		TextBright: lipgloss.Color("#c0caf5"),
+		Accent:     lipgloss.Color("#7aa2f7"),
+		AccentAlt:  lipgloss.Color("#9ece6a"),
+		Warning:    lipgloss.Color("#e0af68"),
+		Error:      lipgloss.Color("#f7768e"),
+		Success:    lipgloss.Color("#9ece6a"),
+		Info:       lipgloss.Color("#73daca"),
 	}
 	return buildStyles(t)
 }
@@ -114,6 +160,7 @@ func LightTheme() *Theme {
 	t := Theme{
 		Background: lipgloss.Color("#ffffff"),
 		Surface:    lipgloss.Color("#f6f8fa"),
+		Surface2:   lipgloss.Color("#eaeef2"),
 		Border:     lipgloss.Color("#d0d7de"),
 		Muted:      lipgloss.Color("#656d76"),
 		Text:       lipgloss.Color("#24292f"),
@@ -122,6 +169,8 @@ func LightTheme() *Theme {
 		AccentAlt:  lipgloss.Color("#1a7f37"),
 		Warning:    lipgloss.Color("#9a6700"),
 		Error:      lipgloss.Color("#cf222e"),
+		Success:    lipgloss.Color("#1a7f37"),
+		Info:       lipgloss.Color("#0550ae"),
 	}
 	return buildStyles(t)
 }
