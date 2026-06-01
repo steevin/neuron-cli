@@ -2,6 +2,7 @@ package panes
 
 import (
 	"fmt"
+	"os/user"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/viewport"
@@ -186,4 +187,54 @@ func (e *Editor) refreshContent() {
 	}
 	e.viewport.SetContent(rendered)
 	e.viewport.GotoTop()
+}
+
+// SplashView returns a Gemini-style splash screen with a logo and user stats.
+func (e *Editor) SplashView(noteCount, tagCount int) string {
+	logoStr := `
+       🧠
+
+ _   _ 
+| \ | | ___ _   _ _ __ ___  _ __ 
+|  \| |/ _ \ | | | '__/ _ \| '_ \ 
+| |\  |  __/ |_| | | | (_) | | | |
+|_| \_|\___|\__,_|_|  \___/|_| |_|
+`
+	logo := lipgloss.NewStyle().
+		Foreground(e.theme.Accent).
+		Bold(true).
+		Render(logoStr)
+
+	userName := "User"
+	if u, err := user.Current(); err == nil {
+		if u.Name != "" {
+			userName = u.Name
+		} else {
+			userName = u.Username
+		}
+	}
+
+	welcome := lipgloss.NewStyle().
+		Foreground(e.theme.TextBright).
+		Bold(true).
+		Render(fmt.Sprintf("Hello, %s", userName))
+
+	stats := lipgloss.NewStyle().
+		Foreground(e.theme.Muted).
+		Render(fmt.Sprintf("%d notes  ·  %d tags", noteCount, tagCount))
+		
+	instruction := lipgloss.NewStyle().
+		Foreground(e.theme.AccentAlt).
+		Render("Press any key to enter vault")
+
+	right := lipgloss.JoinVertical(lipgloss.Left, welcome, stats, "", instruction)
+
+	content := lipgloss.JoinHorizontal(lipgloss.Center, logo, "    ", right)
+
+	return lipgloss.NewStyle().
+		Width(e.width).
+		Height(e.height).
+		Align(lipgloss.Center, lipgloss.Center).
+		Background(e.theme.Background).
+		Render(content)
 }

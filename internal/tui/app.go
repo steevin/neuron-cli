@@ -58,9 +58,10 @@ type Model struct {
 	allNotes  []*notes.Note // unfiltered master list
 	width     int
 	height    int
-	ready     bool // true once the terminal size is known
-	err       error
-	statusMsg string
+	ready      bool // true once the terminal size is known
+	err        error
+	statusMsg  string
+	showSplash bool // controls Gemini-style splash screen
 }
 
 type keyMap struct {
@@ -125,9 +126,10 @@ func New(cfg *config.Config) (*Model, error) {
 		sidebar: sidebar,
 		editor:  editor,
 		search:  search,
-		spinner: s,
-		help:    h,
-		focused: focusSidebar,
+		spinner:    s,
+		help:       h,
+		focused:    focusSidebar,
+		showSplash: true,
 	}, nil
 }
 
@@ -257,6 +259,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cmds = append(cmds, m.syncCmd())
 			}
 		}
+
+		// Hide splash screen on any key press (except resizing/internal messages handled earlier)
+		if m.showSplash {
+			m.showSplash = false
+		}
 	}
 
 	// Delegate to focused child pane.
@@ -303,9 +310,15 @@ func (m Model) View() string {
 	}
 
 	titleBar := m.renderTitleBar()
+	
+	editorView := m.editor.View()
+	if m.showSplash {
+		editorView = m.editor.SplashView(len(m.allNotes), m.countUniqueTags())
+	}
+	
 	middle := lipgloss.JoinHorizontal(lipgloss.Top,
 		m.sidebar.View(),
-		m.editor.View(),
+		editorView,
 	)
 
 	if m.showHelp {
