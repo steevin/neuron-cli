@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="docs/assets/logo.png" alt="Neuron CLI Logo" width="200" />
+<br>
 <img src="https://readme-typing-svg.herokuapp.com?font=Fira+Code&weight=800&size=50&pause=1000&color=00D2FF&center=true&vCenter=true&width=600&lines=NEURON+CLI;TERMINAL+KNOWLEDGE;LOCAL+FIRST;AI+READY" alt="Typing SVG" />
 
 **A terminal knowledge manager that doesn't get in your way.**
