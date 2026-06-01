@@ -1,28 +1,31 @@
 <div align="center">
 
-<img src="docs/assets/banner.png" alt="Neuron CLI" width="100%" />
-
-# neuron-cli
+<img src="https://readme-typing-svg.herokuapp.com?font=Fira+Code&weight=800&size=50&pause=1000&color=00D2FF&center=true&vCenter=true&width=600&lines=NEURON+CLI;TERMINAL+KNOWLEDGE;LOCAL+FIRST;AI+READY" alt="Typing SVG" />
 
 **A terminal knowledge manager that doesn't get in your way.**
 
-[![CI](https://img.shields.io/github/actions/workflow/status/steevin/neuron-cli/ci.yml?style=flat-square&color=00d2ff&logo=github)](https://github.com/steevin/neuron-cli/actions)
-[![Go Version](https://img.shields.io/github/go-mod/go-version/steevin/neuron-cli?style=flat-square&color=8a2be2&logo=go)](go.mod)
-[![License](https://img.shields.io/badge/license-BUSL--1.1-00d2ff?style=flat-square)](LICENSE)
+[![CI](https://img.shields.io/github/actions/workflow/status/steevin/neuron-cli/ci.yml?style=for-the-badge&color=00d2ff&logo=github)](https://github.com/steevin/neuron-cli/actions)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/steevin/neuron-cli?style=for-the-badge&color=8a2be2&logo=go)](go.mod)
+[![License](https://img.shields.io/badge/license-BUSL--1.1-00d2ff?style=for-the-badge)](LICENSE)
 
 </div>
 
-neuron is a local-first, Obsidian-compatible note manager for the terminal. It keeps your Markdown vault exactly where it is — no migration, no cloud, no subscription. Just fast, keyboard-driven access to your notes from anywhere in a shell.
+<br>
 
-**✨ Pro Features Included:**
-- **Interactive CLI Prompts:** Missing arguments? `neuron` will interactively prompt you using beautiful terminal UI (`huh`).
-- **Fuzzy Command Palette:** Press `/` in the TUI to fuzzy-search available commands.
-- **Rich TUI Help:** Press `?` in the TUI to open a modal overlay with all keybindings.
-- **Colorized Outputs & Spinners:** Clean, colorful formatting using `lipgloss` and `bubbles/spinner`.
+> **neuron** is a local-first, Obsidian-compatible note manager for the terminal. It keeps your Markdown vault exactly where it is — no migration, no cloud, no subscription. Just fast, keyboard-driven access to your notes from anywhere in a shell.
 
 ---
 
-## Install
+### <img src="https://img.shields.io/badge/--8a2be2?style=flat-square" width="10" height="20"> ✨ PRO FEATURES INCLUDED
+
+- <kbd>Interactive CLI Prompts</kbd> Missing arguments? `neuron` will interactively prompt you using beautiful terminal UI (`huh`).
+- <kbd>Fuzzy Command Palette</kbd> Press `/` in the TUI to fuzzy-search available commands.
+- <kbd>Rich TUI Help</kbd> Press `?` in the TUI to open a modal overlay with all keybindings.
+- <kbd>Colorized Outputs & Spinners</kbd> Clean, colorful formatting using `lipgloss` and `bubbles/spinner`.
+
+---
+
+### <img src="https://img.shields.io/badge/--00d2ff?style=flat-square" width="10" height="20"> 🚀 INSTALLATION
 
 ```bash
 # Homebrew
@@ -35,21 +38,25 @@ go install github.com/steevin/neuron-cli@latest
 git clone https://github.com/steevin/neuron-cli && cd neuron-cli && make build
 ```
 
-## Usage
+---
+
+### <img src="https://img.shields.io/badge/--8a2be2?style=flat-square" width="10" height="20"> 💻 USAGE
 
 ```bash
-neuron                              # open the TUI (default)
-neuron init                         # interactive setup wizard (first run)
-neuron add                          # interactively prompts for a note title
-neuron add "standup notes" --tag work
-neuron edit "standup notes"         # opens in $EDITOR
-neuron today                        # daily note for today
-neuron list -q "kubernetes"         # search your vault (now with colors!)
-neuron sync --pull                  # git pull + push
-neuron config set editor nvim       # change editor
+user@neuron-cli:~$ neuron                              # open the TUI (default)
+user@neuron-cli:~$ neuron init                         # interactive setup wizard (first run)
+user@neuron-cli:~$ neuron add                          # interactively prompts for a note title
+user@neuron-cli:~$ neuron add "standup notes" --tag work
+user@neuron-cli:~$ neuron edit "standup notes"         # opens in $EDITOR
+user@neuron-cli:~$ neuron today                        # daily note for today
+user@neuron-cli:~$ neuron list -q "kubernetes"         # search your vault (now with colors!)
+user@neuron-cli:~$ neuron sync --pull                  # git pull + push
+user@neuron-cli:~$ neuron config set editor nvim       # change editor
 ```
 
-## MCP (AI agent access)
+---
+
+### <img src="https://img.shields.io/badge/--00d2ff?style=flat-square" width="10" height="20"> 🧠 MCP (AI AGENT ACCESS)
 
 neuron exposes your vault as an [MCP server](https://modelcontextprotocol.io). Add it to any compatible client (Claude Desktop, Cursor, Antigravity…):
 
@@ -63,7 +70,9 @@ neuron exposes your vault as an [MCP server](https://modelcontextprotocol.io). A
 
 Then you can just ask your AI to search, create, or summarize notes directly from your vault.
 
-## TUI keybindings
+---
+
+### <img src="https://img.shields.io/badge/--8a2be2?style=flat-square" width="10" height="20"> ⌨️ TUI KEYBINDINGS
 
 | Key | Action |
 |-----|--------|
@@ -77,7 +86,9 @@ Then you can just ask your AI to search, create, or summarize notes directly fro
 | `?` | Help |
 | `q` | Quit |
 
-## Vault format
+---
+
+### <img src="https://img.shields.io/badge/--00d2ff?style=flat-square" width="10" height="20"> 📂 VAULT FORMAT
 
 Plain Markdown with YAML frontmatter — identical to Obsidian. Point neuron at an existing Obsidian vault and it just works.
 
@@ -91,25 +102,25 @@ created: 2025-05-30T09:00:00Z
 Content with [[wikilinks]] and #inline-tags.
 ```
 
-## Update
+---
+
+### <img src="https://img.shields.io/badge/--8a2be2?style=flat-square" width="10" height="20"> 🔄 UPDATE
 
 ```bash
 brew upgrade steevin/tap/neuron
 ```
 
-## License
-
-[Business Source License 1.1](LICENSE) — free for personal and internal use.
-
 ---
 
-## ❤️ Support this project
+### <img src="https://img.shields.io/badge/--00d2ff?style=flat-square" width="10" height="20"> ❤️ SUPPORT THIS PROJECT
 
 If you find Neuron CLI useful, you can help support the development by donating via PayPal:
-[Donate via PayPal](https://paypal.me/steevin)
+[**Donate via PayPal ➔**](https://paypal.me/steevin)
 
 ---
 
 <div align="center">
 Made by Daniel Steevin
+<br>
+[Business Source License 1.1](LICENSE) — free for personal and internal use.
 </div>
