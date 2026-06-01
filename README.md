@@ -1,12 +1,14 @@
 <div align="center">
 
+<img src="docs/assets/banner.png" alt="Neuron CLI" width="100%" />
+
 # neuron-cli
 
 **A terminal knowledge manager that doesn't get in your way.**
 
-[![CI](https://github.com/steevin/neuron-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/steevin/neuron-cli/actions)
-[![Go Version](https://img.shields.io/github/go-mod/go-version/steevin/neuron-cli)](go.mod)
-[![License](https://img.shields.io/badge/license-BUSL--1.1-blue)](LICENSE)
+[![CI](https://img.shields.io/github/actions/workflow/status/steevin/neuron-cli/ci.yml?style=flat-square&color=00d2ff&logo=github)](https://github.com/steevin/neuron-cli/actions)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/steevin/neuron-cli?style=flat-square&color=8a2be2&logo=go)](go.mod)
+[![License](https://img.shields.io/badge/license-BUSL--1.1-00d2ff?style=flat-square)](LICENSE)
 
 </div>
 
