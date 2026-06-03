@@ -18,12 +18,62 @@
 
 ---
 
-### <img src="https://img.shields.io/badge/--8a2be2?style=flat-square" width="10" height="20"> ✨ PRO FEATURES INCLUDED
+### <img src="https://img.shields.io/badge/--8a2be2?style=flat-square" width="10" height="20"> ✨ FEATURES
 
-- <kbd>Interactive CLI Prompts</kbd> Missing arguments? `neuron` will interactively prompt you using beautiful terminal UI (`huh`).
-- <kbd>Fuzzy Command Palette</kbd> Press `/` in the TUI to fuzzy-search available commands.
-- <kbd>Rich TUI Help</kbd> Press `?` in the TUI to open a modal overlay with all keybindings.
-- <kbd>Colorized Outputs & Spinners</kbd> Clean, colorful formatting using `lipgloss` and `bubbles/spinner`.
+#### 🗂️ PARA Methodology — Built In
+neuron understands the **Projects · Areas · Resources · Archive** framework out of the box. It scans your vault for PARA folders and surfaces them throughout the UI:
+
+- **Folder picker on note creation** — After typing a title (`n` in the TUI or `neuron add`), an interactive chip list lets you choose the destination folder before the note is saved. No more notes silently landing at the vault root.
+- **Keyboard navigation**: `← →` / `h l` / `↑ ↓` / `j k` to move between folders, `Enter` to confirm, `Esc` to cancel.
+- **`neuron move`** — Relocate any note to a different PARA folder at any time, from both the CLI and the `/move` TUI command.
+- Vaults without PARA folders skip the picker entirely — zero friction for simple setups.
+
+#### 📂 Live Folder Breadcrumb
+The status bar at the bottom of the TUI permanently shows where the currently highlighted note lives — e.g. `📂 1. Projects` or `📂 2. Areas/Finance` — giving instant spatial context while browsing without opening the note.
+
+#### 📋 Clipboard-to-Note (Paste Workflow)
+- **`ctrl+v`** on a selected note appends your clipboard contents directly to that note on disk — great for capturing web snippets or code blocks without leaving the terminal.
+- **Bracketed paste** support: paste any amount of text while typing a new note title to pre-fill both the title (first line, up to 40 chars) and the note body in a single gesture.
+
+#### 🔍 Dual Search Engine
+- **BM25 full-text search** — instant keyword search across all notes, available out of the box.
+- **Semantic / AI search** — enable Ollama in your config to get embedding-based similarity search (`neuron list -q "your concept"`).
+
+#### 📝 Template System
+Create note templates and render them on demand:
+
+```bash
+neuron add "2025-06-01 Standup" --template standup
+neuron today                                        # uses a "daily" template automatically
+```
+
+#### 🔗 Wikilinks & Knowledge Graph
+- Full `[[wikilink]]` extraction and index — same format as Obsidian.
+- Press `g` in the TUI to get an instant summary of your knowledge graph: nodes (notes) and edges (links).
+- Inline `#tags` are extracted automatically from note bodies.
+
+#### 💅 Interactive CLI Prompts
+Missing arguments? `neuron` will prompt you interactively for anything it needs — title, folder, confirmation — using rich terminal forms (`huh`).
+
+#### ⚡ Command Palette
+Press `/` in the TUI to fuzzy-search all available commands:
+
+| Command | Description |
+|---------|-------------|
+| `/add <title>` | Create a new note (triggers folder picker) |
+| `/today` | Open or create today's daily note |
+| `/edit` | Open the selected note in `$EDITOR` |
+| `/move <folder>` | Move the selected note to a PARA folder |
+| `/rm` | Delete the selected note |
+| `/sync` | Git push (with optional pull) |
+| `/stats` | Show vault statistics |
+| `/open` | Reveal vault in Finder |
+| `/theme dark\|light` | Switch the TUI colour scheme live |
+| `/quit` | Exit neuron |
+
+#### 🎨 Splash Screen & Theming
+- A premium ASCII splash screen greets you on launch with your vault stats and a quick-start keybinding reference.
+- Two built-in themes: **dark** (Tokyo Night) and **light** (GitHub). Switch live with `/theme dark` or persist with `neuron config set theme dark`.
 
 ---
 
@@ -45,15 +95,20 @@ git clone https://github.com/steevin/neuron-cli && cd neuron-cli && make build
 ### <img src="https://img.shields.io/badge/--8a2be2?style=flat-square" width="10" height="20"> 💻 USAGE
 
 ```bash
-user@neuron-cli:~$ neuron                              # open the TUI (default)
-user@neuron-cli:~$ neuron init                         # interactive setup wizard (first run)
-user@neuron-cli:~$ neuron add                          # interactively prompts for a note title
-user@neuron-cli:~$ neuron add "standup notes" --tag work
-user@neuron-cli:~$ neuron edit "standup notes"         # opens in $EDITOR
-user@neuron-cli:~$ neuron today                        # daily note for today
-user@neuron-cli:~$ neuron list -q "kubernetes"         # search your vault (now with colors!)
-user@neuron-cli:~$ neuron sync --pull                  # git pull + push
-user@neuron-cli:~$ neuron config set editor nvim       # change editor
+neuron                                   # open the TUI (default)
+neuron init                              # interactive setup wizard (first run)
+neuron add                               # prompt for title + PARA folder picker
+neuron add "standup notes" --tag work    # create note with tag, then pick folder
+neuron add "1. Projects/API redesign"    # skip picker — explicit path prefix
+neuron edit "standup notes"             # open in $EDITOR
+neuron today                             # daily note for today
+neuron list -q "kubernetes"              # full-text / semantic search
+neuron move "standup notes" projects    # move note to your Projects folder
+neuron sync --pull                       # git pull + push
+neuron stats                             # note count, tag count
+neuron config set editor nvim            # change default editor
+neuron config set theme dark             # set colour theme
+neuron mcp                               # start the MCP server
 ```
 
 ---
@@ -70,7 +125,7 @@ neuron exposes your vault as an [MCP server](https://modelcontextprotocol.io). A
 }
 ```
 
-Then you can just ask your AI to search, create, or summarize notes directly from your vault.
+Then you can ask your AI to search, create, summarize, or move notes directly from your vault — without leaving the chat.
 
 ---
 
@@ -78,15 +133,25 @@ Then you can just ask your AI to search, create, or summarize notes directly fro
 
 | Key | Action |
 |-----|--------|
-| `j/k` or `↑/↓` | Navigate |
-| `/` | Search / command palette |
-| `e` | Edit selected note |
-| `n` | New note |
+| `j / k` or `↑ / ↓` | Navigate note list |
+| `Enter` | Select / confirm |
+| `Tab / Shift+Tab` | Switch pane focus (sidebar ↔ preview) |
+| `n` | New note (triggers PARA folder picker) |
+| `e` | Edit selected note in `$EDITOR` |
+| `ctrl+v` | Paste clipboard into selected note |
+| `/` | Command palette (fuzzy search) |
 | `s` | Git sync |
 | `g` | Knowledge graph summary |
-| `tab` | Switch pane focus |
-| `?` | Help |
+| `?` | Help overlay (all keybindings) |
 | `q` | Quit |
+
+**During folder selection (`📁 SAVE TO` mode)**
+
+| Key | Action |
+|-----|--------|
+| `← → / h l / ↑ ↓ / j k` | Navigate folder chips |
+| `Enter` | Confirm folder |
+| `Esc` | Cancel |
 
 ---
 
@@ -102,6 +167,16 @@ created: 2025-05-30T09:00:00Z
 ---
 
 Content with [[wikilinks]] and #inline-tags.
+```
+
+**Recommended PARA structure** (neuron auto-detects any variant):
+
+```
+vault/
+├── 1. Projects/
+├── 2. Areas/
+├── 3. Resources/
+└── 4. Archive/
 ```
 
 ---
@@ -124,5 +199,5 @@ If you find Neuron CLI useful, you can help support the development by donating 
 <div align="center">
 Made by Daniel Steevin
 <br>
-[Business Source License 1.1](LICENSE) — free for personal and internal use.
+<a href="LICENSE">Business Source License 1.1</a> — free for personal and internal use.
 </div>
