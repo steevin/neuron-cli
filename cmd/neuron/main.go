@@ -21,7 +21,7 @@ import (
 )
 
 // version is injected at build time via -ldflags "-X main.version=<tag>".
-var version = "dev"
+var version = "1.0.24.1"
 
 var rootCmd = &cobra.Command{
 	Use:   "neuron",
@@ -629,7 +629,7 @@ var tuiCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		return tui.Run(cfg)
+		return tui.Run(cfg, version)
 	},
 }
 

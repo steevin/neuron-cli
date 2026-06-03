@@ -37,7 +37,15 @@ const (
 )
 
 // notesLoadedMsg is dispatched when the initial note scan completes.
-type notesLoadedMsg struct{ notes []*notes.Note }
+type notesLoadedMsg struct {
+	notes          []*notes.Note
+	selectedNoteID string
+}
+
+// editorFinishedMsg is dispatched when the external editor process exits.
+type editorFinishedMsg struct {
+	noteID string
+}
 
 // errMsg carries an error back to the main update loop.
 type errMsg struct{ err error }
@@ -84,6 +92,7 @@ type Model struct {
 	pendingBody     string   // body staged while selecting PARA folder
 	paraFolders     []string // detected PARA folders for folder-select mode
 	folderSelectIdx int      // current selection (0 = root, 1..n = PARA folder)
+	appVersion      string
 }
 
 type keyMap struct {
@@ -127,7 +136,7 @@ var allPaletteCommands = []string{
 }
 
 // New constructs a Model from the provided configuration.
-func New(cfg *config.Config) (*Model, error) {
+func New(cfg *config.Config, appVersion string) (*Model, error) {
 	store, err := notes.NewStore(cfg.VaultPath)
 	if err != nil {
 		return nil, fmt.Errorf("tui: create note store: %w", err)
@@ -135,7 +144,7 @@ func New(cfg *config.Config) (*Model, error) {
 
 	theme := styles.GetTheme(cfg.Theme)
 
-	sidebar := panes.NewSidebar(theme)
+	sidebar := panes.NewSidebar(theme, appVersion)
 	sidebar.SetFocused(true)
 
 	editor := panes.NewEditor(theme)
@@ -169,6 +178,7 @@ func New(cfg *config.Config) (*Model, error) {
 		help:       h,
 		focused:    focusSidebar,
 		showSplash: true,
+		appVersion: appVersion,
 	}, nil
 }
 
@@ -184,7 +194,7 @@ func (m Model) Init() tea.Cmd {
 			if err != nil {
 				return errMsg{err: err}
 			}
-			return notesLoadedMsg{notes: noteList}
+			return notesLoadedMsg{notes: noteList, selectedNoteID: ""}
 		},
 	)
 }
@@ -210,7 +220,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case notesLoadedMsg:
 		m.allNotes = msg.notes
-		m.sidebar.SetNotes(msg.notes)
+		query := m.search.Query()
+		if query != "" {
+			m = m.filterNotes(query)
+		} else {
+			m.sidebar.SetNotes(msg.notes)
+		}
+		if msg.selectedNoteID != "" {
+			m.sidebar.SelectNoteByID(msg.selectedNoteID)
+		}
+		if selected := m.sidebar.SelectedNote(); selected != nil {
+			m.editor.SetNote(selected)
+		} else {
+			m.editor.SetNote(nil)
+		}
 		m.statusMsg = fmt.Sprintf("Loaded %d notes", len(msg.notes))
 		m.isSuccess = false
 
@@ -229,6 +252,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.statusMsg = "✓ " + msg.msg
 		m.isSuccess = true
 		m.syncing = false
+
+	case editorFinishedMsg:
+		m.statusMsg = "✓ Returned from editor"
+		m.isSuccess = true
+		cmds = append(cmds, m.reloadNotes(msg.noteID))
 
 	case pasteNoteMsg:
 		// Update the note in-place in allNotes so the sidebar reflects the change.
@@ -330,7 +358,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					folder := title[:idx]
 					title = title[idx+1:]
 					m.setFocus(focusSidebar)
-					_, err := m.store.Create(folder, title, nil, body)
+					note, err := m.store.Create(folder, title, nil, body)
 					if err != nil {
 						m.statusMsg = "✗ " + err.Error()
 						m.isSuccess = false
@@ -342,7 +370,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.statusMsg = "✓ Created: " + title
 					}
 					m.isSuccess = true
-					cmds = append(cmds, m.reloadNotes())
+					cmds = append(cmds, m.reloadNotes(note.ID))
 					return m, tea.Batch(cmds...)
 				}
 
@@ -350,7 +378,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				paraFolders := m.store.DetectPARAFolders()
 				if len(paraFolders) == 0 {
 					m.setFocus(focusSidebar)
-					_, err := m.store.Create("", title, nil, body)
+					note, err := m.store.Create("", title, nil, body)
 					if err != nil {
 						m.statusMsg = "✗ " + err.Error()
 						m.isSuccess = false
@@ -362,7 +390,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.statusMsg = "✓ Created: " + title
 					}
 					m.isSuccess = true
-					cmds = append(cmds, m.reloadNotes())
+					cmds = append(cmds, m.reloadNotes(note.ID))
 					return m, tea.Batch(cmds...)
 				}
 
@@ -414,7 +442,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.paraFolders = nil
 				m.folderSelectIdx = 0
 				m.setFocus(focusSidebar)
-				_, err := m.store.Create(folder, title, nil, body)
+				note, err := m.store.Create(folder, title, nil, body)
 				if err != nil {
 					m.statusMsg = "✗ " + err.Error()
 					m.isSuccess = false
@@ -426,7 +454,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.statusMsg = "✓ Created: " + title
 				}
 				m.isSuccess = true
-				cmds = append(cmds, m.reloadNotes())
+				cmds = append(cmds, m.reloadNotes(note.ID))
 				return m, tea.Batch(cmds...)
 
 			case msg.Type == tea.KeyEsc:
@@ -906,22 +934,26 @@ func (m *Model) handlePaletteCommand(cmdStr string) tea.Cmd {
 
 	case "/today", "/t":
 		title := "Daily " + time.Now().Format("2006-01-02")
-		_, err := m.store.Get(title)
+		var targetID string
+		note, err := m.store.Get(title)
 		if err != nil {
 			content, _ := m.store.RenderTemplate("daily", title)
 			if content == "" {
 				content = "## 🎯 Today's goals\n- [ ] \n\n## 📝 Notes\n\n## 🔗 Links\n"
 			}
-			_, err = m.store.Create("", title, []string{"daily"}, content)
+			newNote, err := m.store.Create("", title, []string{"daily"}, content)
 			if err != nil {
 				m.statusMsg = "✗ Error creating daily note: " + err.Error()
 				m.isSuccess = false
 				return nil
 			}
+			targetID = newNote.ID
+		} else {
+			targetID = note.ID
 		}
 		m.statusMsg = "✓ Daily note ready"
 		m.isSuccess = true
-		return m.reloadNotes()
+		return m.reloadNotes(targetID)
 
 	case "/add", "/a":
 		if len(parts) < 2 {
@@ -934,7 +966,7 @@ func (m *Model) handlePaletteCommand(cmdStr string) tea.Cmd {
 		if idx := strings.LastIndex(title, "/"); idx != -1 {
 			folder := title[:idx]
 			title = title[idx+1:]
-			_, err := m.store.Create(folder, title, nil, "")
+			note, err := m.store.Create(folder, title, nil, "")
 			if err != nil {
 				m.statusMsg = "✗ " + err.Error()
 				m.isSuccess = false
@@ -942,12 +974,12 @@ func (m *Model) handlePaletteCommand(cmdStr string) tea.Cmd {
 			}
 			m.statusMsg = "✓ Created: " + title
 			m.isSuccess = true
-			return m.reloadNotes()
+			return m.reloadNotes(note.ID)
 		}
 		// Detect PARA structure; skip picker when vault has no folders
 		paraFolders := m.store.DetectPARAFolders()
 		if len(paraFolders) == 0 {
-			_, err := m.store.Create("", title, nil, "")
+			note, err := m.store.Create("", title, nil, "")
 			if err != nil {
 				m.statusMsg = "✗ " + err.Error()
 				m.isSuccess = false
@@ -955,7 +987,7 @@ func (m *Model) handlePaletteCommand(cmdStr string) tea.Cmd {
 			}
 			m.statusMsg = "✓ Created: " + title
 			m.isSuccess = true
-			return m.reloadNotes()
+			return m.reloadNotes(note.ID)
 		}
 		// Show PARA folder picker before creating the note
 		m.pendingTitle = title
@@ -997,7 +1029,7 @@ func (m *Model) handlePaletteCommand(cmdStr string) tea.Cmd {
 		}
 		m.statusMsg = "✓ Deleted: " + note.Title
 		m.isSuccess = true
-		return m.reloadNotes()
+		return m.reloadNotes("")
 
 	case "/move", "/m":
 		note := m.sidebar.SelectedNote()
@@ -1040,7 +1072,7 @@ func (m *Model) handlePaletteCommand(cmdStr string) tea.Cmd {
 			m.statusMsg = "✓ Moved note to " + targetFolder
 		}
 		m.isSuccess = true
-		return m.reloadNotes()
+		return m.reloadNotes(note.ID)
 
 	case "/theme":
 		if len(parts) < 2 {
@@ -1056,7 +1088,7 @@ func (m *Model) handlePaletteCommand(cmdStr string) tea.Cmd {
 		}
 		m.cfg.Theme = newTheme
 		m.theme = styles.GetTheme(newTheme)
-		m.sidebar = panes.NewSidebar(m.theme)
+		m.sidebar = panes.NewSidebar(m.theme, m.appVersion)
 		m.sidebar.SetFocused(true)
 		m.editor = panes.NewEditor(m.theme)
 		m.search = panes.NewSearchPane(m.theme)
@@ -1078,14 +1110,22 @@ func (m *Model) handlePaletteCommand(cmdStr string) tea.Cmd {
 }
 
 // reloadNotes fetches the note list from disk and updates the sidebar.
-func (m *Model) reloadNotes() tea.Cmd {
+func (m *Model) reloadNotes(selectedNoteID string) tea.Cmd {
+	if selectedNoteID == "" {
+		if sel := m.sidebar.SelectedNote(); sel != nil {
+			selectedNoteID = sel.ID
+		}
+	}
 	store := m.store
 	return func() tea.Msg {
 		noteList, err := store.List(notes.ListOptions{})
 		if err != nil {
 			return errMsg{err: err}
 		}
-		return notesLoadedMsg{notes: noteList}
+		return notesLoadedMsg{
+			notes:          noteList,
+			selectedNoteID: selectedNoteID,
+		}
 	}
 }
 
@@ -1120,7 +1160,7 @@ func (m *Model) openInEditor() tea.Cmd {
 		if err != nil {
 			return errMsg{err: fmt.Errorf("editor: %w", err)}
 		}
-		return successMsg{msg: "Returned from editor"}
+		return editorFinishedMsg{noteID: note.ID}
 	})
 }
 
@@ -1405,8 +1445,8 @@ func (m Model) renderRightColumn(height, width int) string {
 }
 
 // Run constructs the root model and starts the Bubble Tea program.
-func Run(cfg *config.Config) error {
-	m, err := New(cfg)
+func Run(cfg *config.Config, appVersion string) error {
+	m, err := New(cfg, appVersion)
 	if err != nil {
 		return fmt.Errorf("tui: init: %w", err)
 	}

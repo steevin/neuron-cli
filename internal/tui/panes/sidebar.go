@@ -51,10 +51,11 @@ type Sidebar struct {
 	width   int
 	height  int
 	focused bool
+	version string
 }
 
 // NewSidebar constructs a Sidebar. Call SetSize before the first render.
-func NewSidebar(theme *styles.Theme) Sidebar {
+func NewSidebar(theme *styles.Theme, version string) Sidebar {
 	delegate := list.NewDefaultDelegate()
 
 	delegate.Styles.SelectedTitle = delegate.Styles.SelectedTitle.
@@ -79,8 +80,9 @@ func NewSidebar(theme *styles.Theme) Sidebar {
 	l.FilterInput.TextStyle = lipgloss.NewStyle().Foreground(theme.Text)
 
 	return Sidebar{
-		list:  l,
-		theme: theme,
+		list:    l,
+		theme:   theme,
+		version: version,
 	}
 }
 
@@ -110,20 +112,10 @@ func (s Sidebar) View() string {
 		logoWidth = 10
 	}
 
-	cPrompt := lipgloss.NewStyle().Foreground(lipgloss.Color("#00d2ff")).Bold(true).Render
-	cLeft := lipgloss.NewStyle().Foreground(lipgloss.Color("#00a2ff")).Render
-	cRight := lipgloss.NewStyle().Foreground(lipgloss.Color("#bb55ff")).Render
-	cWhite := lipgloss.NewStyle().Foreground(lipgloss.Color("#ffffff")).Bold(true).Render
 	cCyan := lipgloss.NewStyle().Foreground(lipgloss.Color("#00d2ff")).Bold(true).Render
+	cVersion := lipgloss.NewStyle().Foreground(s.theme.Muted).Render
 
-	line1 := "       " + cLeft("o") + cLeft("──") + cRight("o") + cRight("──") + cRight("o")
-	line2 := "      " + cLeft("/") + " " + cLeft("\\") + cLeft("/") + " " + cRight("\\") + cRight("/") + " " + cRight("\\")
-	line3 := "  " + cPrompt(">") + "  " + cLeft("o") + cLeft("──") + cLeft("o") + cRight("──") + cRight("o") + cRight("──") + cRight("o")
-	line4 := "      " + cLeft("\\") + " " + cLeft("/") + cLeft("\\") + " " + cRight("/") + cRight("\\") + " " + cRight("/")
-	line5 := "       " + cLeft("o") + cLeft("──") + cRight("o") + cRight("──") + cRight("o")
-	line7 := cCyan("NEURON ") + cWhite("CLI")
-
-	logoContent := line1 + "\n" + line2 + "\n" + line3 + "\n" + line4 + "\n" + line5 + "\n\n" + line7
+	logoContent := cCyan("NEURO-CLI") + "\n" + cVersion("v"+s.version)
 
 	logoBox := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
@@ -188,5 +180,15 @@ func (s Sidebar) SelectedNote() *notes.Note {
 	}
 	return ni.Note
 }
+
+func (s *Sidebar) SelectNoteByID(id string) {
+	for i, item := range s.list.Items() {
+		if ni, ok := item.(NoteItem); ok && ni.Note.ID == id {
+			s.list.Select(i)
+			break
+		}
+	}
+}
+
 
 
