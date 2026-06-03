@@ -169,6 +169,45 @@ func (s *Store) DetectPARAFolders() []string {
 	return result
 }
 
+// ExtraFolders returns top-level vault directories that are not PARA folders
+// and not hidden/system directories (e.g. .obsidian, .trash).
+func (s *Store) ExtraFolders() []string {
+	paraFolders := s.DetectPARAFolders()
+	paraSet := make(map[string]struct{}, len(paraFolders))
+	for _, pf := range paraFolders {
+		paraSet[strings.ToLower(pf)] = struct{}{}
+	}
+
+	entries, err := os.ReadDir(s.VaultPath)
+	if err != nil {
+		return nil
+	}
+
+	systemDirs := map[string]struct{}{
+		".obsidian": {},
+		".trash":    {},
+	}
+
+	var extra []string
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if strings.HasPrefix(name, ".") {
+			continue
+		}
+		if _, isSystem := systemDirs[name]; isSystem {
+			continue
+		}
+		if _, isPARA := paraSet[strings.ToLower(name)]; isPARA {
+			continue
+		}
+		extra = append(extra, name)
+	}
+	return extra
+}
+
 // Move shifts a note to a different folder inside the vault.
 func (s *Store) Move(idOrTitle string, targetFolder string) error {
 	note, err := s.Get(idOrTitle)

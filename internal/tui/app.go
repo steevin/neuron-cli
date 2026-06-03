@@ -1420,11 +1420,32 @@ func (m Model) renderRightColumn(height, width int) string {
 		for _, pf := range paraFolders {
 			count := 0
 			for _, n := range m.allNotes {
-				if strings.HasPrefix(n.Path, pf+"/") || n.Path == pf {
+				if strings.HasPrefix(n.RelPath, pf+"/") || n.RelPath == pf {
 					count++
 				}
 			}
 			displayName := pf
+			runes := []rune(displayName)
+			if len(runes) > 15 {
+				displayName = string(runes[:12]) + "..."
+			}
+			statsRows = append(statsRows, fmt.Sprintf("%s %s", labelStyle.Render(fmt.Sprintf("  %-11s ", displayName+":")), valStyle.Render(fmt.Sprintf("%d", count))))
+		}
+	}
+
+	// Extra (non-PARA) folders
+	extraFolders := m.store.ExtraFolders()
+	if len(extraFolders) > 0 {
+		statsRows = append(statsRows, "")
+		statsRows = append(statsRows, lipgloss.NewStyle().Foreground(theme.Muted).Bold(true).Render("Other folders:"))
+		for _, ef := range extraFolders {
+			count := 0
+			for _, n := range m.allNotes {
+				if strings.HasPrefix(n.RelPath, ef+"/") || n.RelPath == ef {
+					count++
+				}
+			}
+			displayName := ef
 			runes := []rune(displayName)
 			if len(runes) > 15 {
 				displayName = string(runes[:12]) + "..."
