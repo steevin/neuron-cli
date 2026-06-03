@@ -83,12 +83,36 @@ var addCmd = &cobra.Command{
 	Long:  "Create a new Markdown note in your vault, optionally from clipboard content or a template.",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		var title string
+		var folder string
+		folderFlag, _ := cmd.Flags().GetString("folder")
+
+		cfg, _ := config.Load()
+		store, err := notes.NewStore(cfg.VaultPath)
+		if err != nil {
+			return err
+		}
+
 		if len(args) == 0 {
-			err := huh.NewInput().
-				Title("Note Title").
-				Description("Enter the title for the new note").
-				Value(&title).
-				Run()
+			paraFolders := store.DetectPARAFolders()
+			options := []huh.Option[string]{
+				huh.NewOption("Root Vault (No folder)", ""),
+			}
+			for _, pf := range paraFolders {
+				options = append(options, huh.NewOption("📁 "+pf, pf))
+			}
+
+			err := huh.NewForm(
+				huh.NewGroup(
+					huh.NewInput().
+						Title("Note Title").
+						Description("Enter the title for the new note").
+						Value(&title),
+					huh.NewSelect[string]().
+						Title("Select Folder (PARA)").
+						Options(options...).
+						Value(&folder),
+				),
+			).Run()
 			if err != nil {
 				return err
 			}
@@ -97,12 +121,9 @@ var addCmd = &cobra.Command{
 			}
 		} else {
 			title = strings.Join(args, " ")
+			folder = folderFlag
 		}
-		cfg, _ := config.Load()
-		store, err := notes.NewStore(cfg.VaultPath)
-		if err != nil {
-			return err
-		}
+
 		tags, _ := cmd.Flags().GetStringSlice("tag")
 
 		templateName, _ := cmd.Flags().GetString("template")
@@ -115,11 +136,18 @@ var addCmd = &cobra.Command{
 			}
 		}
 
-		note, err := store.Create(title, tags, content)
+		note, err := store.Create(folder, title, tags, content)
 		if err != nil {
 			return err
 		}
 		fmt.Printf("Created %s\n", note.Path)
+
+		noEdit, _ := cmd.Flags().GetBool("no-edit")
+		if !noEdit {
+			c := exec.Command(resolveEditor(cfg), note.Path)
+			c.Stdin, c.Stdout, c.Stderr = os.Stdin, os.Stdout, os.Stderr
+			return c.Run()
+		}
 		return nil
 	},
 }
@@ -354,7 +382,7 @@ var todayCmd = &cobra.Command{
 			if renderErr != nil || content == "" {
 				content = "## 🎯 Today's goals\n- [ ] \n\n## 📝 Notes\n\n## 🔗 Links\n"
 			}
-			note, err = store.Create(title, []string{"daily"}, content)
+			note, err = store.Create("", title, []string{"daily"}, content)
 			if err != nil {
 				return err
 			}
@@ -362,6 +390,86 @@ var todayCmd = &cobra.Command{
 		c := exec.Command(resolveEditor(cfg), note.Path)
 		c.Stdin, c.Stdout, c.Stderr = os.Stdin, os.Stdout, os.Stderr
 		return c.Run()
+	},
+}
+
+// moveCmd moves a note to a target folder in the vault (e.g. PARA folders)
+var moveCmd = &cobra.Command{
+	Use:   "move [id-or-title] [folder]",
+	Short: "Move a note to a folder",
+	Long:  "Move a note to another folder (e.g. projects, areas, resources, archive, or root).",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		var idOrTitle string
+		var targetFolder string
+
+		cfg, _ := config.Load()
+		store, err := notes.NewStore(cfg.VaultPath)
+		if err != nil {
+			return err
+		}
+
+		if len(args) == 0 {
+			err := huh.NewInput().
+				Title("Note ID or Title").
+				Description("Enter the ID or title of the note to move").
+				Value(&idOrTitle).
+				Run()
+			if err != nil {
+				return err
+			}
+			if idOrTitle == "" {
+				return fmt.Errorf("id or title required")
+			}
+		} else {
+			idOrTitle = args[0]
+		}
+
+		if len(args) < 2 {
+			paraFolders := store.DetectPARAFolders()
+			options := []huh.Option[string]{
+				huh.NewOption("Root Vault (No folder)", ""),
+			}
+			for _, pf := range paraFolders {
+				options = append(options, huh.NewOption("📁 "+pf, pf))
+			}
+
+			err := huh.NewSelect[string]().
+				Title("Select Destination Folder").
+				Options(options...).
+				Value(&targetFolder).
+				Run()
+			if err != nil {
+				return err
+			}
+		} else {
+			argFolder := strings.ToLower(args[1])
+			paraFolders := store.DetectPARAFolders()
+			matched := false
+			for _, pf := range paraFolders {
+				if strings.Contains(strings.ToLower(pf), argFolder) {
+					targetFolder = pf
+					matched = true
+					break
+				}
+			}
+			if !matched {
+				if argFolder == "root" || argFolder == "/" || argFolder == "" {
+					targetFolder = ""
+				} else {
+					targetFolder = args[1]
+				}
+			}
+		}
+
+		if err := store.Move(idOrTitle, targetFolder); err != nil {
+			return err
+		}
+		if targetFolder == "" {
+			fmt.Printf("Moved note to root vault\n")
+		} else {
+			fmt.Printf("Moved note to %s\n", targetFolder)
+		}
+		return nil
 	},
 }
 
@@ -550,6 +658,8 @@ func init() {
 	addCmd.Flags().Bool("from-clipboard", false, "Populate note body from clipboard contents")
 	addCmd.Flags().StringSlice("tag", nil, "Tags to apply to the new note (repeatable)")
 	addCmd.Flags().String("template", "", "Name of the note template to use")
+	addCmd.Flags().String("folder", "", "Folder in the vault to save the note in (e.g. '1. Projects')")
+	addCmd.Flags().Bool("no-edit", false, "Create the note without opening the editor")
 
 	// listCmd flags
 	listCmd.Flags().StringSlice("tag", nil, "Filter by tag (repeatable)")
@@ -580,6 +690,7 @@ func main() {
 		openCmd,
 		statsCmd,
 		todayCmd,
+		moveCmd,
 		syncCmd,
 		mcpCmd,
 		tuiCmd,

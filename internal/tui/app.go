@@ -29,10 +29,11 @@ import (
 type focus int
 
 const (
-	focusSidebar  focus = iota
+	focusSidebar     focus = iota
 	focusEditor
 	focusSearch
-	focusNewNote // new: inline note creation mode
+	focusNewNote      // inline note creation mode
+	focusFolderSelect // PARA folder selection after entering a title
 )
 
 // notesLoadedMsg is dispatched when the initial note scan completes.
@@ -77,8 +78,12 @@ type Model struct {
 	err           error
 	statusMsg     string
 	isSuccess     bool   // whether statusMsg should render green
-	showSplash    bool   // controls splash screen
-	clipboardBody string // clipboard content staged for next note creation
+	showSplash      bool     // controls splash screen
+	clipboardBody   string   // clipboard content staged for next note creation
+	pendingTitle    string   // title staged while selecting PARA folder
+	pendingBody     string   // body staged while selecting PARA folder
+	paraFolders     []string // detected PARA folders for folder-select mode
+	folderSelectIdx int      // current selection (0 = root, 1..n = PARA folder)
 }
 
 type keyMap struct {
@@ -118,7 +123,7 @@ var keys = keyMap{
 
 // allPaletteCommands is the full list for fuzzy suggestions.
 var allPaletteCommands = []string{
-	"/add", "/today", "/sync", "/stats", "/open", "/edit", "/rm", "/theme", "/help", "/quit",
+	"/add", "/today", "/sync", "/stats", "/open", "/edit", "/rm", "/move", "/theme", "/help", "/quit",
 }
 
 // New constructs a Model from the provided configuration.
@@ -298,7 +303,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case msg.Type == tea.KeyEnter:
 				title := strings.TrimSpace(m.newNote.Value())
 				body := m.clipboardBody
-				
+
 				// Fallback auto-title if input is still empty somehow
 				if title == "" && body != "" {
 					lines := strings.Split(strings.TrimSpace(body), "\n")
@@ -312,26 +317,61 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 				m.newNote.SetValue("")
 				m.clipboardBody = ""
-				m.setFocus(focusSidebar)
-				
+
 				if title == "" {
+					m.setFocus(focusSidebar)
 					m.statusMsg = "Cancelled — note needs a title"
 					m.isSuccess = false
 					return m, tea.Batch(cmds...)
 				}
-				_, err := m.store.Create(title, nil, body)
-				if err != nil {
-					m.statusMsg = "✗ " + err.Error()
-					m.isSuccess = false
+
+				// If user typed "folder/title", honour it directly — no picker needed
+				if idx := strings.LastIndex(title, "/"); idx != -1 {
+					folder := title[:idx]
+					title = title[idx+1:]
+					m.setFocus(focusSidebar)
+					_, err := m.store.Create(folder, title, nil, body)
+					if err != nil {
+						m.statusMsg = "✗ " + err.Error()
+						m.isSuccess = false
+						return m, tea.Batch(cmds...)
+					}
+					if body != "" {
+						m.statusMsg = fmt.Sprintf("✓ Creada: %s  ·  📋 %s pegados", title, formatBytes(len(body)))
+					} else {
+						m.statusMsg = "✓ Created: " + title
+					}
+					m.isSuccess = true
+					cmds = append(cmds, m.reloadNotes())
 					return m, tea.Batch(cmds...)
 				}
-				if body != "" {
-					m.statusMsg = fmt.Sprintf("✓ Creada: %s  ·  📋 %s pegados", title, formatBytes(len(body)))
-				} else {
-					m.statusMsg = "✓ Created: " + title
+
+				// Detect PARA structure; skip picker when vault has no folders
+				paraFolders := m.store.DetectPARAFolders()
+				if len(paraFolders) == 0 {
+					m.setFocus(focusSidebar)
+					_, err := m.store.Create("", title, nil, body)
+					if err != nil {
+						m.statusMsg = "✗ " + err.Error()
+						m.isSuccess = false
+						return m, tea.Batch(cmds...)
+					}
+					if body != "" {
+						m.statusMsg = fmt.Sprintf("✓ Creada: %s  ·  📋 %s pegados", title, formatBytes(len(body)))
+					} else {
+						m.statusMsg = "✓ Created: " + title
+					}
+					m.isSuccess = true
+					cmds = append(cmds, m.reloadNotes())
+					return m, tea.Batch(cmds...)
 				}
-				m.isSuccess = true
-				cmds = append(cmds, m.reloadNotes())
+
+				// Show PARA folder picker before creating the note
+				m.pendingTitle = title
+				m.pendingBody = body
+				m.paraFolders = paraFolders
+				m.folderSelectIdx = 0
+				m.setFocus(focusFolderSelect)
 				return m, tea.Batch(cmds...)
 
 			case msg.Type == tea.KeyEsc:
@@ -356,6 +396,73 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			var cmd tea.Cmd
 			m.newNote, cmd = m.newNote.Update(msg)
 			cmds = append(cmds, cmd)
+			return m, tea.Batch(cmds...)
+		}
+
+		// ── Folder-select mode ───────────────────────────────────────────
+		if m.focused == focusFolderSelect {
+			switch {
+			case msg.Type == tea.KeyEnter:
+				var folder string
+				if m.folderSelectIdx > 0 {
+					folder = m.paraFolders[m.folderSelectIdx-1]
+				}
+				title := m.pendingTitle
+				body := m.pendingBody
+				m.pendingTitle = ""
+				m.pendingBody = ""
+				m.paraFolders = nil
+				m.folderSelectIdx = 0
+				m.setFocus(focusSidebar)
+				_, err := m.store.Create(folder, title, nil, body)
+				if err != nil {
+					m.statusMsg = "✗ " + err.Error()
+					m.isSuccess = false
+					return m, tea.Batch(cmds...)
+				}
+				if body != "" {
+					m.statusMsg = fmt.Sprintf("✓ Creada: %s  ·  📋 %s pegados", title, formatBytes(len(body)))
+				} else {
+					m.statusMsg = "✓ Created: " + title
+				}
+				m.isSuccess = true
+				cmds = append(cmds, m.reloadNotes())
+				return m, tea.Batch(cmds...)
+
+			case msg.Type == tea.KeyEsc:
+				m.pendingTitle = ""
+				m.pendingBody = ""
+				m.paraFolders = nil
+				m.folderSelectIdx = 0
+				m.setFocus(focusSidebar)
+				m.statusMsg = "Cancelled"
+				m.isSuccess = false
+				return m, tea.Batch(cmds...)
+
+			case msg.String() == "left" || msg.String() == "h":
+				if m.folderSelectIdx > 0 {
+					m.folderSelectIdx--
+				}
+				return m, tea.Batch(cmds...)
+
+			case msg.String() == "right" || msg.String() == "l":
+				if m.folderSelectIdx < len(m.paraFolders) {
+					m.folderSelectIdx++
+				}
+				return m, tea.Batch(cmds...)
+
+			case msg.String() == "up" || msg.String() == "k":
+				if m.folderSelectIdx > 0 {
+					m.folderSelectIdx--
+				}
+				return m, tea.Batch(cmds...)
+
+			case msg.String() == "down" || msg.String() == "j":
+				if m.folderSelectIdx < len(m.paraFolders) {
+					m.folderSelectIdx++
+				}
+				return m, tea.Batch(cmds...)
+			}
 			return m, tea.Batch(cmds...)
 		}
 
@@ -553,6 +660,12 @@ func (m Model) renderTitleBar() string {
 		modeLabel = m.theme.ModeIndicator.
 			Background(m.theme.Muted).
 			Render(" ⊞ PREVIEW ")
+
+	case focusFolderSelect:
+		modeLabel = m.theme.ModeIndicator.
+			Background(m.theme.AccentAlt).
+			Foreground(m.theme.Background).
+			Render(" 📁 SAVE TO ")
 	}
 
 	leftStyle := m.theme.AppName.Background(m.theme.Surface)
@@ -621,6 +734,44 @@ func (m Model) renderStatusBar() string {
 			m.theme.StatusBar.Render(clipIndicator),
 		)
 
+	case focusFolderSelect:
+		// Build selectable folder chips — index 0 is always Root
+		labels := make([]string, 0, len(m.paraFolders)+1)
+		labels = append(labels, "📂 Root Vault")
+		for _, pf := range m.paraFolders {
+			labels = append(labels, "📁 "+pf)
+		}
+		var folderChips []string
+		for i, label := range labels {
+			var chip string
+			if i == m.folderSelectIdx {
+				chip = lipgloss.NewStyle().
+					Foreground(m.theme.Background).
+					Background(m.theme.AccentAlt).
+					Bold(true).
+					Padding(0, 1).
+					Render("▶ " + label)
+			} else {
+				chip = lipgloss.NewStyle().
+					Foreground(m.theme.TextBright).
+					Background(m.theme.Surface2).
+					Padding(0, 1).
+					Render(label)
+			}
+			folderChips = append(folderChips, chip)
+		}
+		promptLabel := lipgloss.NewStyle().
+			Foreground(m.theme.AccentAlt).
+			Background(m.theme.Surface).
+			Bold(true).
+			Padding(0, 1).
+			Render(fmt.Sprintf("📁 «%s» →", m.pendingTitle))
+		navHint := lipgloss.NewStyle().
+			Foreground(m.theme.Muted).
+			Background(m.theme.Surface).
+			Render("  [← →] navegar · [Enter] confirmar · [Esc] cancelar")
+		left = promptLabel + "  " + strings.Join(folderChips, " ") + navHint
+
 	case focusSearch:
 		query := m.search.Query()
 		if strings.HasPrefix(query, "/") {
@@ -649,16 +800,34 @@ func (m Model) renderStatusBar() string {
 		}
 
 	default:
+		// Build a folder breadcrumb for the currently selected note.
+		folderCrumb := ""
+		if note := m.sidebar.SelectedNote(); note != nil {
+			folder := noteFolderLabel(note, m.cfg.VaultPath)
+			if folder != "" {
+				folderCrumb = lipgloss.NewStyle().
+					Foreground(m.theme.Muted).
+					Background(m.theme.Surface).
+					Render("  📂 " + folder)
+			}
+		}
+
 		if m.statusMsg != "" {
 			msg := m.statusMsg
 			if m.syncing {
 				msg = m.spinner.View() + " " + msg
-				left = m.theme.StatusBar.Render(" " + msg)
+				left = m.theme.StatusBar.Render(" "+msg) + folderCrumb
 			} else if m.isSuccess {
-				left = m.theme.SuccessMsg.Render(msg)
+				left = m.theme.SuccessMsg.Render(msg) + folderCrumb
 			} else {
-				left = m.theme.StatusBar.Render(" " + msg)
+				left = m.theme.StatusBar.Render(" "+msg) + folderCrumb
 			}
+		} else if folderCrumb != "" {
+			hint := lipgloss.NewStyle().
+				Foreground(m.theme.Muted).
+				Background(m.theme.Surface).
+				Render(" [n] new  [ctrl+v] pegar en nota  [/] comandos  [e] edit  [s] sync  [g] graph")
+			left = hint + folderCrumb
 		} else {
 			hint := lipgloss.NewStyle().
 				Foreground(m.theme.Muted).
@@ -710,7 +879,7 @@ func (m *Model) handlePaletteCommand(cmdStr string) tea.Cmd {
 			if content == "" {
 				content = "## 🎯 Today's goals\n- [ ] \n\n## 📝 Notes\n\n## 🔗 Links\n"
 			}
-			_, err = m.store.Create(title, []string{"daily"}, content)
+			_, err = m.store.Create("", title, []string{"daily"}, content)
 			if err != nil {
 				m.statusMsg = "✗ Error creating daily note: " + err.Error()
 				m.isSuccess = false
@@ -728,15 +897,40 @@ func (m *Model) handlePaletteCommand(cmdStr string) tea.Cmd {
 			return nil
 		}
 		title := strings.Join(parts[1:], " ")
-		_, err := m.store.Create(title, nil, "")
-		if err != nil {
-			m.statusMsg = "✗ " + err.Error()
-			m.isSuccess = false
-			return nil
+		// If user typed "folder/title", honour it directly — no picker needed
+		if idx := strings.LastIndex(title, "/"); idx != -1 {
+			folder := title[:idx]
+			title = title[idx+1:]
+			_, err := m.store.Create(folder, title, nil, "")
+			if err != nil {
+				m.statusMsg = "✗ " + err.Error()
+				m.isSuccess = false
+				return nil
+			}
+			m.statusMsg = "✓ Created: " + title
+			m.isSuccess = true
+			return m.reloadNotes()
 		}
-		m.statusMsg = "✓ Created: " + title
-		m.isSuccess = true
-		return m.reloadNotes()
+		// Detect PARA structure; skip picker when vault has no folders
+		paraFolders := m.store.DetectPARAFolders()
+		if len(paraFolders) == 0 {
+			_, err := m.store.Create("", title, nil, "")
+			if err != nil {
+				m.statusMsg = "✗ " + err.Error()
+				m.isSuccess = false
+				return nil
+			}
+			m.statusMsg = "✓ Created: " + title
+			m.isSuccess = true
+			return m.reloadNotes()
+		}
+		// Show PARA folder picker before creating the note
+		m.pendingTitle = title
+		m.pendingBody = ""
+		m.paraFolders = paraFolders
+		m.folderSelectIdx = 0
+		m.setFocus(focusFolderSelect)
+		return nil
 
 	case "/stats":
 		count := len(m.allNotes)
@@ -769,6 +963,49 @@ func (m *Model) handlePaletteCommand(cmdStr string) tea.Cmd {
 			return nil
 		}
 		m.statusMsg = "✓ Deleted: " + note.Title
+		m.isSuccess = true
+		return m.reloadNotes()
+
+	case "/move", "/m":
+		note := m.sidebar.SelectedNote()
+		if note == nil {
+			m.statusMsg = "✗ No note selected"
+			m.isSuccess = false
+			return nil
+		}
+		if len(parts) < 2 {
+			m.statusMsg = "Usage: /move projects|areas|resources|archive|root"
+			m.isSuccess = false
+			return nil
+		}
+		target := parts[1]
+		paraFolders := m.store.DetectPARAFolders()
+		var targetFolder string
+		matched := false
+		for _, pf := range paraFolders {
+			if strings.Contains(strings.ToLower(pf), strings.ToLower(target)) {
+				targetFolder = pf
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			if strings.ToLower(target) == "root" || target == "/" {
+				targetFolder = ""
+			} else {
+				targetFolder = target
+			}
+		}
+		if err := m.store.Move(note.ID, targetFolder); err != nil {
+			m.statusMsg = "✗ " + err.Error()
+			m.isSuccess = false
+			return nil
+		}
+		if targetFolder == "" {
+			m.statusMsg = "✓ Moved note to root vault"
+		} else {
+			m.statusMsg = "✓ Moved note to " + targetFolder
+		}
 		m.isSuccess = true
 		return m.reloadNotes()
 
@@ -991,6 +1228,30 @@ func formatBytes(n int) string {
 	default:
 		return fmt.Sprintf("%.1f MB", float64(n)/(1024*1024))
 	}
+}
+
+// noteFolderLabel returns the relative folder of a note within the vault,
+// e.g. "1. Projects" or "1. Projects/Web Apps". Returns "" for root notes.
+func noteFolderLabel(note *notes.Note, vaultPath string) string {
+	rel := note.RelPath
+	if rel == "" {
+		// Derive from absolute path when RelPath is not set.
+		abs := note.Path
+		if len(abs) > len(vaultPath)+1 {
+			rel = abs[len(vaultPath)+1:]
+		}
+	}
+	if rel == "" {
+		return ""
+	}
+	// Strip the filename — keep only the directory portion.
+	dir := strings.TrimSuffix(rel, "/"+strings.ReplaceAll(rel, "\\", "/")[strings.LastIndexByte(strings.ReplaceAll(rel, "\\", "/"), '/')+1:])
+	if idx := strings.LastIndexAny(rel, "/\\"); idx >= 0 {
+		dir = rel[:idx]
+	} else {
+		return "" // file sits directly at vault root
+	}
+	return dir
 }
 
 // Run constructs the root model and starts the Bubble Tea program.
