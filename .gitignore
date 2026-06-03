@@ -1,0 +1,21 @@
+# Binaries and build artifacts
+bin/
+dist/
+neuron-bin
+/neuron
+
+# OS specific files
+.DS_Store
+*.DS_Store
+.AppleDouble
+.LSOverride
+
+# Go workspace
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary
+*.test

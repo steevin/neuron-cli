@@ -42,6 +42,11 @@ type notesLoadedMsg struct {
 	selectedNoteID string
 }
 
+// noteLoadedMsg is dispatched when a single note is reloaded from disk.
+type noteLoadedMsg struct {
+	note *notes.Note
+}
+
 // editorFinishedMsg is dispatched when the external editor process exits.
 type editorFinishedMsg struct {
 	noteID string
@@ -125,7 +130,7 @@ var keys = keyMap{
 	Paste:  key.NewBinding(key.WithKeys("ctrl+v"), key.WithHelp("ctrl+v", "paste clipboard")),
 	Edit:   key.NewBinding(key.WithKeys("e"), key.WithHelp("e", "edit")),
 	Sync:   key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "sync")),
-	Graph:  key.NewBinding(key.WithKeys("g"), key.WithHelp("g", "graph")),
+	Graph:  key.NewBinding(key.WithKeys("ctrl+g"), key.WithHelp("ctrl+g", "graph")),
 	Help:   key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
 	Quit:   key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
 }
@@ -237,6 +242,32 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.statusMsg = fmt.Sprintf("Loaded %d notes", len(msg.notes))
 		m.isSuccess = false
 
+	case noteLoadedMsg:
+		// Update the note in-place in allNotes so the sidebar reflects changes.
+		for i, n := range m.allNotes {
+			if n.ID == msg.note.ID {
+				m.allNotes[i] = msg.note
+				break
+			}
+		}
+		notes.SortNotes(m.allNotes, "updated")
+
+		query := m.search.Query()
+		if query != "" {
+			m = m.filterNotes(query)
+		} else {
+			m.sidebar.SetNotes(m.allNotes)
+		}
+		m.sidebar.SelectNoteByID(msg.note.ID)
+
+		if selected := m.sidebar.SelectedNote(); selected != nil {
+			m.editor.SetNote(selected)
+		} else {
+			m.editor.SetNote(nil)
+		}
+		m.statusMsg = "✓ Returned from editor"
+		m.isSuccess = true
+
 	case errMsg:
 		m.err = msg.err
 		m.statusMsg = "✗ " + msg.err.Error()
@@ -256,7 +287,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case editorFinishedMsg:
 		m.statusMsg = "✓ Returned from editor"
 		m.isSuccess = true
-		cmds = append(cmds, m.reloadNotes(msg.noteID))
+		var targetNote *notes.Note
+		for _, n := range m.allNotes {
+			if n.ID == msg.noteID {
+				targetNote = n
+				break
+			}
+		}
+		if targetNote != nil {
+			cmds = append(cmds, m.reloadNote(targetNote))
+		} else {
+			cmds = append(cmds, m.reloadNotes(msg.noteID))
+		}
 
 	case pasteNoteMsg:
 		// Update the note in-place in allNotes so the sidebar reflects the change.
@@ -555,7 +597,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 
-		case "g":
+		case "ctrl+g":
 			if m.focused != focusSearch {
 				m.statusMsg = m.renderGraphSummary()
 				m.isSuccess = false
@@ -887,13 +929,13 @@ func (m Model) renderStatusBar() string {
 			hint := lipgloss.NewStyle().
 				Foreground(m.theme.Muted).
 				Background(m.theme.Surface).
-				Render(" [n] new  [ctrl+v] paste to note  [/] commands  [e] edit  [s] sync  [g] graph")
+				Render(" [n] new  [ctrl+v] paste to note  [/] commands  [e] edit  [s] sync  [ctrl+g] graph")
 			left = hint + folderCrumb
 		} else {
 			hint := lipgloss.NewStyle().
 				Foreground(m.theme.Muted).
 				Background(m.theme.Surface).
-				Render(" [n] new  [ctrl+v] paste to note  [/] commands  [e] edit  [s] sync  [g] graph")
+				Render(" [n] new  [ctrl+v] paste to note  [/] commands  [e] edit  [s] sync  [ctrl+g] graph")
 			left = hint
 		}
 	}
@@ -1129,6 +1171,18 @@ func (m *Model) reloadNotes(selectedNoteID string) tea.Cmd {
 	}
 }
 
+// reloadNote re-reads and parses a single note from disk and updates the TUI model.
+func (m *Model) reloadNote(note *notes.Note) tea.Cmd {
+	store := m.store
+	return func() tea.Msg {
+		fresh, err := store.Reload(note)
+		if err != nil {
+			return errMsg{err: err}
+		}
+		return noteLoadedMsg{note: fresh}
+	}
+}
+
 // openInEditor opens the currently selected note in the configured editor.
 func (m *Model) openInEditor() tea.Cmd {
 	note := m.sidebar.SelectedNote()
@@ -1270,7 +1324,7 @@ func (m *Model) pasteTextToSelectedNote(text string) tea.Cmd {
 // pasteNoteMsg so the editor can refresh without a full vault reload.
 func appendTextToNote(store *notes.Store, note *notes.Note, text string) tea.Msg {
 	// Re-read from disk to get the freshest content.
-	fresh, err := store.Get(note.ID)
+	fresh, err := store.Reload(note)
 	if err != nil {
 		fresh = note
 	}
@@ -1414,7 +1468,7 @@ func (m Model) renderRightColumn(height, width int) string {
 		renderHint("ctrl+v", "Paste clipboard"),
 		renderHint("e", "Edit note"),
 		renderHint("s", "Sync git"),
-		renderHint("g", "View graph"),
+		renderHint("ctrl+g", "View graph"),
 		renderHint("?", "Help"),
 		renderHint("q", "Quit"),
 	}

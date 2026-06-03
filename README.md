@@ -141,7 +141,7 @@ Then you can ask your AI to search, create, summarize, or move notes directly fr
 | `ctrl+v` | Paste clipboard into selected note |
 | `/` | Command palette (fuzzy search) |
 | `s` | Git sync |
-| `g` | Knowledge graph summary |
+| `ctrl+g` | Knowledge graph summary |
 | `?` | Help overlay (all keybindings) |
 | `q` | Quit |
 

@@ -298,7 +298,7 @@ func (s *Store) List(opts ListOptions) ([]*Note, error) {
 		filtered = append(filtered, n)
 	}
 
-	sortNotes(filtered, opts.SortBy)
+	SortNotes(filtered, opts.SortBy)
 
 	if opts.Limit > 0 && len(filtered) > opts.Limit {
 		filtered = filtered[:opts.Limit]
@@ -317,6 +317,20 @@ func (s *Store) Update(note *Note) error {
 	}
 	return nil
 }
+
+// Reload re-reads and parses a single note from disk, updating its fields.
+func (s *Store) Reload(note *Note) (*Note, error) {
+	fresh, err := ParseFile(note.Path)
+	if err != nil {
+		return nil, err
+	}
+	rel, err := filepath.Rel(s.VaultPath, note.Path)
+	if err == nil {
+		fresh.RelPath = rel
+	}
+	return fresh, nil
+}
+
 
 // Delete moves the note to the vault's .trash folder instead of wiping it.
 func (s *Store) Delete(idOrTitle string) error {
@@ -419,8 +433,8 @@ func matchesListOptions(n *Note, opts ListOptions) bool {
 	return true
 }
 
-// sortNotes sorts notes in place according to the requested field.
-func sortNotes(notes []*Note, by string) {
+// SortNotes sorts notes in place according to the requested field.
+func SortNotes(notes []*Note, by string) {
 	switch by {
 	case "created":
 		sort.Slice(notes, func(i, j int) bool {
