@@ -659,10 +659,6 @@ func (m Model) View() string {
 		bodyHeight = 1
 	}
 
-	sidebarWidth := m.width * 25 / 100
-	if sidebarWidth < 22 {
-		sidebarWidth = 22
-	}
 
 	rightWidth := m.width * 25 / 100
 	if rightWidth < 22 {
@@ -1047,8 +1043,8 @@ func (m *Model) handlePaletteCommand(cmdStr string) tea.Cmd {
 		return nil
 
 	case "/open", "/o":
-		go func() { //nolint:errcheck
-			exec.Command("open", "--", m.cfg.VaultPath).Run()
+		go func() {
+			_ = exec.Command("open", "--", m.cfg.VaultPath).Run()
 		}()
 		m.statusMsg = "✓ Opened vault in Finder"
 		m.isSuccess = true
@@ -1372,7 +1368,7 @@ func noteFolderLabel(note *notes.Note, vaultPath string) string {
 		return ""
 	}
 	// Strip the filename — keep only the directory portion.
-	dir := strings.TrimSuffix(rel, "/"+strings.ReplaceAll(rel, "\\", "/")[strings.LastIndexByte(strings.ReplaceAll(rel, "\\", "/"), '/')+1:])
+	var dir string
 	if idx := strings.LastIndexAny(rel, "/\\"); idx >= 0 {
 		dir = rel[:idx]
 	} else {
