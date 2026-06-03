@@ -268,7 +268,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Push the fresh note content to the editor without a full reload.
 		m.editor.SetNote(msg.note)
-		m.statusMsg = fmt.Sprintf("✓ 📋 %s pegados en «%s»", formatBytes(msg.bytes), msg.note.Title)
+		m.statusMsg = fmt.Sprintf("✓ 📋 %s pasted in «%s»", formatBytes(msg.bytes), msg.note.Title)
 		m.isSuccess = true
 
 	case panes.SearchQueryMsg:
@@ -318,7 +318,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			case focusSidebar, focusEditor:
 				// Immediate feedback
-				m.statusMsg = fmt.Sprintf("📋 Pegando %s...", formatBytes(len(text)))
+				m.statusMsg = fmt.Sprintf("📋 Pasting %s...", formatBytes(len(text)))
 				m.isSuccess = false
 				cmds = append(cmds, m.pasteTextToSelectedNote(text))
 			}
@@ -365,7 +365,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						return m, tea.Batch(cmds...)
 					}
 					if body != "" {
-						m.statusMsg = fmt.Sprintf("✓ Creada: %s  ·  📋 %s pegados", title, formatBytes(len(body)))
+						m.statusMsg = fmt.Sprintf("✓ Created: %s  ·  📋 %s pasted", title, formatBytes(len(body)))
 					} else {
 						m.statusMsg = "✓ Created: " + title
 					}
@@ -385,7 +385,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						return m, tea.Batch(cmds...)
 					}
 					if body != "" {
-						m.statusMsg = fmt.Sprintf("✓ Creada: %s  ·  📋 %s pegados", title, formatBytes(len(body)))
+						m.statusMsg = fmt.Sprintf("✓ Created: %s  ·  📋 %s pasted", title, formatBytes(len(body)))
 					} else {
 						m.statusMsg = "✓ Created: " + title
 					}
@@ -414,7 +414,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case msg.String() == "ctrl+v":
 				text, err := clipboard.ReadAll()
 				if err != nil || text == "" {
-					m.statusMsg = "✗ Clipboard vacío o no disponible"
+					m.statusMsg = "✗ Clipboard empty or unavailable"
 					m.isSuccess = false
 					return m, tea.Batch(cmds...)
 				}
@@ -449,7 +449,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, tea.Batch(cmds...)
 				}
 				if body != "" {
-					m.statusMsg = fmt.Sprintf("✓ Creada: %s  ·  📋 %s pegados", title, formatBytes(len(body)))
+					m.statusMsg = fmt.Sprintf("✓ Created: %s  ·  📋 %s pasted", title, formatBytes(len(body)))
 				} else {
 					m.statusMsg = "✓ Created: " + title
 				}
@@ -779,14 +779,14 @@ func (m Model) renderStatusBar() string {
 				Background(m.theme.AccentAlt).
 				Bold(true).
 				Padding(0, 1).
-				Render(fmt.Sprintf("📋 %s listo", formatBytes(len(m.clipboardBody)))) +
+				Render(fmt.Sprintf("📋 %s ready", formatBytes(len(m.clipboardBody)))) +
 				"  " + lipgloss.NewStyle().
 				Foreground(m.theme.Muted).
 				Render("\""+preview+"\"")
 		} else {
 			clipIndicator = "  " + lipgloss.NewStyle().
 				Foreground(m.theme.Muted).
-				Render("[ctrl+v] pegar clipboard · [esc] cancelar")
+				Render("[ctrl+v] paste clipboard · [esc] cancel")
 		}
 
 		left = lipgloss.JoinHorizontal(lipgloss.Left,
@@ -830,7 +830,7 @@ func (m Model) renderStatusBar() string {
 		navHint := lipgloss.NewStyle().
 			Foreground(m.theme.Muted).
 			Background(m.theme.Surface).
-			Render("  [← →] navegar · [Enter] confirmar · [Esc] cancelar")
+			Render("  [← →] navigate · [Enter] confirm · [Esc] cancel")
 		left = promptLabel + "  " + strings.Join(folderChips, " ") + navHint
 
 	case focusSearch:
@@ -887,13 +887,13 @@ func (m Model) renderStatusBar() string {
 			hint := lipgloss.NewStyle().
 				Foreground(m.theme.Muted).
 				Background(m.theme.Surface).
-				Render(" [n] new  [ctrl+v] pegar en nota  [/] comandos  [e] edit  [s] sync  [g] graph")
+				Render(" [n] new  [ctrl+v] paste to note  [/] commands  [e] edit  [s] sync  [g] graph")
 			left = hint + folderCrumb
 		} else {
 			hint := lipgloss.NewStyle().
 				Foreground(m.theme.Muted).
 				Background(m.theme.Surface).
-				Render(" [n] new  [ctrl+v] pegar en nota  [/] comandos  [e] edit  [s] sync  [g] graph")
+				Render(" [n] new  [ctrl+v] paste to note  [/] commands  [e] edit  [s] sync  [g] graph")
 			left = hint
 		}
 	}
@@ -1243,7 +1243,7 @@ func (m *Model) pasteClipboardToSelectedNote() tea.Cmd {
 	return func() tea.Msg {
 		text, err := clipboard.ReadAll()
 		if err != nil || text == "" {
-			return errMsg{err: fmt.Errorf("clipboard vacío o no disponible")}
+			return errMsg{err: fmt.Errorf("clipboard empty or unavailable")}
 		}
 		return appendTextToNote(store, note, text)
 	}
@@ -1339,12 +1339,12 @@ func (m Model) renderRightColumn(height, width int) string {
 		Padding(0, 1).
 		Width(width - 2) // account for borders
 
-	// ─── ESTADÍSTICAS ───
+	// ─── STATISTICS ───
 	statsTitleStyle := lipgloss.NewStyle().
 		Bold(true).
 		Foreground(theme.Accent).
 		MarginBottom(1)
-	statsTitle := statsTitleStyle.Render("ESTADÍSTICAS")
+	statsTitle := statsTitleStyle.Render("STATISTICS")
 
 	totalNotes := len(m.allNotes)
 	uniqueTags := m.countUniqueTags()
@@ -1354,8 +1354,8 @@ func (m Model) renderRightColumn(height, width int) string {
 
 	// Build stats rows
 	statsRows := []string{
-		fmt.Sprintf("%s %s", labelStyle.Render("Notas:     "), valStyle.Render(fmt.Sprintf("%d", totalNotes))),
-		fmt.Sprintf("%s %s", labelStyle.Render("Etiquetas: "), valStyle.Render(fmt.Sprintf("%d", uniqueTags))),
+		fmt.Sprintf("%s %s", labelStyle.Render("Notes:     "), valStyle.Render(fmt.Sprintf("%d", totalNotes))),
+		fmt.Sprintf("%s %s", labelStyle.Render("Tags:      "), valStyle.Render(fmt.Sprintf("%d", uniqueTags))),
 	}
 
 	// Count PARA folders dynamically
@@ -1385,8 +1385,8 @@ func (m Model) renderRightColumn(height, width int) string {
 		statsCard = cardStyle.Render(statsContent)
 	}
 
-	// ─── ACCESOS RÁPIDOS ───
-	quickTitle := statsTitleStyle.Render("ACCESOS RÁPIDOS")
+	// ─── QUICK SHORTCUTS ───
+	quickTitle := statsTitleStyle.Render("QUICK SHORTCUTS")
 
 	keyStyle := lipgloss.NewStyle().
 		Foreground(theme.Background).
@@ -1409,14 +1409,14 @@ func (m Model) renderRightColumn(height, width int) string {
 	}
 
 	quickRows := []string{
-		renderHint("/", "Comandos"),
-		renderHint("n", "Nueva nota"),
-		renderHint("ctrl+v", "Pegar clipboard"),
-		renderHint("e", "Editar nota"),
-		renderHint("s", "Sincronizar git"),
-		renderHint("g", "Ver grafo"),
-		renderHint("?", "Ayuda"),
-		renderHint("q", "Salir"),
+		renderHint("/", "Commands"),
+		renderHint("n", "New note"),
+		renderHint("ctrl+v", "Paste clipboard"),
+		renderHint("e", "Edit note"),
+		renderHint("s", "Sync git"),
+		renderHint("g", "View graph"),
+		renderHint("?", "Help"),
+		renderHint("q", "Quit"),
 	}
 
 	quickContent := lipgloss.JoinVertical(lipgloss.Left, append([]string{quickTitle}, quickRows...)...)
@@ -1425,23 +1425,8 @@ func (m Model) renderRightColumn(height, width int) string {
 		quickCard = cardStyle.Render(quickContent)
 	}
 
-	// ─── TIP / INFO ───
-	infoCard := ""
-	remainingHeight := height - lipgloss.Height(statsCard) - lipgloss.Height(quickCard)
-	if remainingHeight >= 6 && width > 6 {
-		infoTitle := statsTitleStyle.Foreground(theme.Warning).Render("CITA / TIP")
-		// Let's use a nice quote
-		quoteText := lipgloss.NewStyle().
-			Foreground(theme.Muted).
-			Italic(true).
-			Width(width - 4).
-			Render("“El código es como el humor. Cuando tienes que explicarlo, es malo.”\n— Cory House")
-		infoContent := lipgloss.JoinVertical(lipgloss.Left, infoTitle, quoteText)
-		infoCard = cardStyle.Render(infoContent)
-	}
-
 	// Join all right column elements vertically with spacing
-	return lipgloss.JoinVertical(lipgloss.Left, statsCard, quickCard, infoCard)
+	return lipgloss.JoinVertical(lipgloss.Left, statsCard, quickCard)
 }
 
 // Run constructs the root model and starts the Bubble Tea program.

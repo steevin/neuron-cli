@@ -115,7 +115,7 @@ func (s Sidebar) View() string {
 	cCyan := lipgloss.NewStyle().Foreground(lipgloss.Color("#00d2ff")).Bold(true).Render
 	cVersion := lipgloss.NewStyle().Foreground(s.theme.Muted).Render
 
-	logoContent := cCyan("NEURO-CLI") + "\n" + cVersion("v"+s.version)
+	logoContent := cCyan("NEURON") + "\n" + cVersion("v"+s.version)
 
 	logoBox := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
@@ -127,7 +127,7 @@ func (s Sidebar) View() string {
 		Render(logoContent)
 
 	// Header: show focused indicator
-	headerTitle := " 📝 MY NOTES"
+	headerTitle := " 📝 NOTES"
 	header := s.theme.TitleBar.
 		Width(s.width - 2). // account for border
 		Render(headerTitle)
