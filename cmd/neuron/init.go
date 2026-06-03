@@ -2,6 +2,9 @@ package main
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
@@ -21,6 +24,7 @@ var initAppCmd = &cobra.Command{
 		}
 
 		var vaultPath, editor, theme string
+		var setupPARA bool
 		vaultPath = cfg.VaultPath
 		editor = cfg.Editor
 		theme = cfg.Theme
@@ -46,6 +50,10 @@ var initAppCmd = &cobra.Command{
 						huh.NewOption("Light", "light"),
 					).
 					Value(&theme),
+				huh.NewConfirm().
+					Title("PARA Method").
+					Description("Would you like to initialize the PARA folder structure? (1. Projects, 2. Areas, 3. Resources, 4. Archive)").
+					Value(&setupPARA),
 			),
 		).Run()
 
@@ -61,7 +69,27 @@ var initAppCmd = &cobra.Command{
 			return fmt.Errorf("failed to save config: %v", err)
 		}
 
+		if setupPARA {
+			// Resolve tilde if needed
+			resolvedPath := vaultPath
+			if strings.HasPrefix(resolvedPath, "~/") || resolvedPath == "~" {
+				home, err := os.UserHomeDir()
+				if err == nil {
+					resolvedPath = home + resolvedPath[1:]
+				}
+			}
+			folders := []string{"1. Projects", "2. Areas", "3. Resources", "4. Archive"}
+			for _, folder := range folders {
+				path := filepath.Join(resolvedPath, folder)
+				if err := os.MkdirAll(path, 0o700); err != nil {
+					fmt.Printf("Warning: failed to create folder %q: %v\n", folder, err)
+				}
+			}
+			fmt.Println("✓ PARA folders initialized!")
+		}
+
 		fmt.Println("NeuronCLI initialized successfully!")
 		return nil
 	},
 }
+

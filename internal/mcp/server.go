@@ -185,7 +185,7 @@ func (s *NeuronMCPServer) handleCreateNote(ctx context.Context, req mcp.CallTool
 		}
 	}
 
-	note, err := s.store.Create(title, tags, content)
+	note, err := s.store.Create("", title, tags, content)
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("failed to create note: %v", err)), nil
 	}
@@ -276,7 +276,7 @@ func (s *NeuronMCPServer) handleGetDaily(ctx context.Context, req mcp.CallToolRe
 	if err != nil {
 		// Create it
 		content := "## 🎯 Today's goals\n- [ ] \n\n## 📝 Notes\n\n## 🔗 Links\n"
-		note, err = s.store.Create(title, []string{"daily"}, content)
+		note, err = s.store.Create("", title, []string{"daily"}, content)
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("failed to create daily: %v", err)), nil
 		}

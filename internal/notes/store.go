@@ -57,26 +57,43 @@ func NewStore(vaultPath string) (*Store, error) {
 	}, nil
 }
 
-// Create writes a new note with the given title, tags, and body content.
+// Create writes a new note with the given folder, title, tags, and body content.
 // It generates a UUID, derives a safe filename from the title, and returns
 // the populated Note.
-func (s *Store) Create(title string, tags []string, content string) (*Note, error) {
+func (s *Store) Create(folder string, title string, tags []string, content string) (*Note, error) {
 	id := uuid.New().String()
 	filename := safeFilename(title) + ".md"
-	fullPath := filepath.Join(s.VaultPath, filename)
+
+	var dirPath string
+	if folder != "" {
+		dirPath = filepath.Join(s.VaultPath, folder)
+		// Ensure subdirectory exists
+		if err := os.MkdirAll(dirPath, 0o700); err != nil {
+			return nil, fmt.Errorf("notes: creating subdirectory %q: %w", folder, err)
+		}
+	} else {
+		dirPath = s.VaultPath
+	}
+
+	fullPath := filepath.Join(dirPath, filename)
 
 	// Avoid overwriting an existing file by appending a suffix.
 	if _, err := os.Stat(fullPath); err == nil {
 		base := strings.TrimSuffix(filename, ".md")
-		fullPath = filepath.Join(s.VaultPath, fmt.Sprintf("%s-%d.md", base, time.Now().UnixNano()))
+		fullPath = filepath.Join(dirPath, fmt.Sprintf("%s-%d.md", base, time.Now().UnixNano()))
 	}
 
 	now := time.Now()
+	relPath := filepath.Base(fullPath)
+	if rel, err := filepath.Rel(s.VaultPath, fullPath); err == nil {
+		relPath = rel
+	}
+
 	note := &Note{
 		ID:      id,
 		Title:   title,
 		Path:    fullPath,
-		RelPath: filepath.Base(fullPath),
+		RelPath: relPath,
 		Content: content,
 		Tags:    tags,
 		Created: now,
@@ -92,6 +109,102 @@ func (s *Store) Create(title string, tags []string, content string) (*Note, erro
 
 	return note, nil
 }
+
+// DetectPARAFolders returns standard PARA directory names.
+// It detects whether the user is using numbered names (e.g. "1. Projects") or simple names (e.g. "Projects").
+func (s *Store) DetectPARAFolders() []string {
+	// Look at the root of the vault for folders containing PARA keywords.
+	// Defaults to numbered folders starting from 1 if none detected.
+	// standard defaults:
+	defaults := []string{"1. Projects", "2. Areas", "3. Resources", "4. Archive"}
+	
+	entries, err := os.ReadDir(s.VaultPath)
+	if err != nil {
+		return defaults
+	}
+
+	found := make(map[string]string) // map key "projects" -> actual folder name
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		lower := strings.ToLower(name)
+		if strings.Contains(lower, "project") {
+			found["projects"] = name
+		} else if strings.Contains(lower, "area") {
+			found["areas"] = name
+		} else if strings.Contains(lower, "resource") {
+			found["resources"] = name
+		} else if strings.Contains(lower, "archive") {
+			found["archives"] = name
+		}
+	}
+
+	result := make([]string, 4)
+	if name, ok := found["projects"]; ok {
+		result[0] = name
+	} else {
+		result[0] = "1. Projects"
+	}
+
+	if name, ok := found["areas"]; ok {
+		result[1] = name
+	} else {
+		result[1] = "2. Areas"
+	}
+
+	if name, ok := found["resources"]; ok {
+		result[2] = name
+	} else {
+		result[2] = "3. Resources"
+	}
+
+	if name, ok := found["archives"]; ok {
+		result[3] = name
+	} else {
+		result[3] = "4. Archive"
+	}
+
+	return result
+}
+
+// Move shifts a note to a different folder inside the vault.
+func (s *Store) Move(idOrTitle string, targetFolder string) error {
+	note, err := s.Get(idOrTitle)
+	if err != nil {
+		return err
+	}
+
+	targetDir := s.VaultPath
+	if targetFolder != "" {
+		targetDir = filepath.Join(s.VaultPath, targetFolder)
+	}
+
+	if err := os.MkdirAll(targetDir, 0o700); err != nil {
+		return fmt.Errorf("notes: creating target directory: %w", err)
+	}
+
+	dest := filepath.Join(targetDir, filepath.Base(note.Path))
+	// Avoid collisions
+	if _, statErr := os.Stat(dest); statErr == nil {
+		stem := strings.TrimSuffix(filepath.Base(note.Path), ".md")
+		dest = filepath.Join(targetDir, fmt.Sprintf("%s-%d.md", stem, time.Now().UnixNano()))
+	}
+
+	if err := os.Rename(note.Path, dest); err != nil {
+		return fmt.Errorf("notes: moving note: %w", err)
+	}
+
+	// Update note in-memory path (optional, but good for caller)
+	note.Path = dest
+	rel, relErr := filepath.Rel(s.VaultPath, dest)
+	if relErr == nil {
+		note.RelPath = rel
+	}
+	return nil
+}
+
 
 // Get retrieves a note by UUID (exact match), then by title (case-insensitive),
 // then by filename stem. Returns ErrNoteNotFound when no match exists.
