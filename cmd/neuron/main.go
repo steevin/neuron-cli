@@ -21,7 +21,7 @@ import (
 )
 
 // version is injected at build time via -ldflags "-X main.version=<tag>".
-var version = "1.0.27.1"
+var version = "1.0.27.2"
 
 var rootCmd = &cobra.Command{
 	Use:   "neuron",
