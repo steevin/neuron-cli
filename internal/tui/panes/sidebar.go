@@ -104,11 +104,38 @@ func (s Sidebar) View() string {
 		borderStyle = borderStyle.BorderForeground(s.theme.Accent)
 	}
 
-	// Header: show focused indicator
-	headerTitle := " 🧠 VAULT"
-	if s.focused {
-		headerTitle = " 🧠 VAULT"
+	// Logo block
+	logoWidth := s.width - 4
+	if logoWidth < 10 {
+		logoWidth = 10
 	}
+
+	cPrompt := lipgloss.NewStyle().Foreground(lipgloss.Color("#00d2ff")).Bold(true).Render
+	cLeft := lipgloss.NewStyle().Foreground(lipgloss.Color("#00a2ff")).Render
+	cRight := lipgloss.NewStyle().Foreground(lipgloss.Color("#bb55ff")).Render
+	cWhite := lipgloss.NewStyle().Foreground(lipgloss.Color("#ffffff")).Bold(true).Render
+	cCyan := lipgloss.NewStyle().Foreground(lipgloss.Color("#00d2ff")).Bold(true).Render
+
+	line1 := "       " + cLeft("o") + cLeft("──") + cRight("o") + cRight("──") + cRight("o")
+	line2 := "      " + cLeft("/") + " " + cLeft("\\") + cLeft("/") + " " + cRight("\\") + cRight("/") + " " + cRight("\\")
+	line3 := "  " + cPrompt(">") + "  " + cLeft("o") + cLeft("──") + cLeft("o") + cRight("──") + cRight("o") + cRight("──") + cRight("o")
+	line4 := "      " + cLeft("\\") + " " + cLeft("/") + cLeft("\\") + " " + cRight("/") + cRight("\\") + " " + cRight("/")
+	line5 := "       " + cLeft("o") + cLeft("──") + cRight("o") + cRight("──") + cRight("o")
+	line7 := cCyan("NEURON ") + cWhite("CLI")
+
+	logoContent := line1 + "\n" + line2 + "\n" + line3 + "\n" + line4 + "\n" + line5 + "\n\n" + line7
+
+	logoBox := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(s.theme.Border).
+		Padding(0, 1).
+		MarginBottom(1).
+		Width(logoWidth).
+		Align(lipgloss.Center).
+		Render(logoContent)
+
+	// Header: show focused indicator
+	headerTitle := " 📝 MY NOTES"
 	header := s.theme.TitleBar.
 		Width(s.width - 2). // account for border
 		Render(headerTitle)
@@ -124,7 +151,7 @@ func (s Sidebar) View() string {
 		Padding(0, 1).
 		Render(footerText)
 
-	inner := lipgloss.JoinVertical(lipgloss.Left, header, body, footer)
+	inner := lipgloss.JoinVertical(lipgloss.Left, logoBox, header, body, footer)
 	return borderStyle.Render(inner)
 }
 
@@ -139,7 +166,11 @@ func (s *Sidebar) SetNotes(noteSlice []*notes.Note) {
 func (s *Sidebar) SetSize(width, height int) {
 	s.width = width
 	s.height = height
-	s.list.SetSize(width-2, height-4)
+	listHeight := height - 4 - 10
+	if listHeight < 5 {
+		listHeight = 5
+	}
+	s.list.SetSize(width-2, listHeight)
 }
 
 func (s *Sidebar) SetFocused(focused bool) {

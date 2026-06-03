@@ -584,14 +584,38 @@ func (m Model) View() string {
 
 	titleBar := m.renderTitleBar()
 
+	bodyHeight := m.height - 2
+	if bodyHeight < 1 {
+		bodyHeight = 1
+	}
+
+	sidebarWidth := m.width * 25 / 100
+	if sidebarWidth < 22 {
+		sidebarWidth = 22
+	}
+
+	rightWidth := m.width * 25 / 100
+	if rightWidth < 22 {
+		rightWidth = 22
+	}
+
 	editorView := m.editor.View()
 	if m.showSplash {
 		editorView = m.editor.SplashView(len(m.allNotes), m.countUniqueTags())
 	}
 
+	// Add right border to editor view to separate it from the stats column
+	editorBorderView := lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder(), false, true, false, false).
+		BorderForeground(m.theme.Border).
+		Render(editorView)
+
+	rightView := m.renderRightColumn(bodyHeight, rightWidth)
+
 	middle := lipgloss.JoinHorizontal(lipgloss.Top,
 		m.sidebar.View(),
-		editorView,
+		editorBorderView,
+		rightView,
 	)
 
 	if m.showHelp {
@@ -621,14 +645,23 @@ func (m *Model) layout() {
 		bodyHeight = 1
 	}
 
-	sidebarWidth := m.width * 30 / 100
-	if sidebarWidth < 20 {
-		sidebarWidth = 20
+	sidebarWidth := m.width * 25 / 100
+	if sidebarWidth < 22 {
+		sidebarWidth = 22
 	}
-	editorWidth := m.width - sidebarWidth
+
+	rightWidth := m.width * 25 / 100
+	if rightWidth < 22 {
+		rightWidth = 22
+	}
+
+	editorWidth := m.width - sidebarWidth - rightWidth
+	if editorWidth < 20 {
+		editorWidth = 20
+	}
 
 	m.sidebar.SetSize(sidebarWidth, bodyHeight)
-	m.editor.SetSize(editorWidth, bodyHeight)
+	m.editor.SetSize(editorWidth-1, bodyHeight)
 	m.search.SetWidth(m.width)
 }
 
@@ -1252,6 +1285,123 @@ func noteFolderLabel(note *notes.Note, vaultPath string) string {
 		return "" // file sits directly at vault root
 	}
 	return dir
+}
+
+// renderRightColumn builds a column of statistics and quick shortcuts.
+func (m Model) renderRightColumn(height, width int) string {
+	theme := m.theme
+
+	// Card style: rounded border, surface background, padding
+	cardStyle := lipgloss.NewStyle().
+		Background(theme.Surface).
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(theme.Border).
+		Padding(0, 1).
+		Width(width - 2) // account for borders
+
+	// ─── ESTADÍSTICAS ───
+	statsTitleStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(theme.Accent).
+		MarginBottom(1)
+	statsTitle := statsTitleStyle.Render("ESTADÍSTICAS")
+
+	totalNotes := len(m.allNotes)
+	uniqueTags := m.countUniqueTags()
+
+	labelStyle := lipgloss.NewStyle().Foreground(theme.Text)
+	valStyle := lipgloss.NewStyle().Foreground(theme.AccentAlt).Bold(true)
+
+	// Build stats rows
+	statsRows := []string{
+		fmt.Sprintf("%s %s", labelStyle.Render("Notas:     "), valStyle.Render(fmt.Sprintf("%d", totalNotes))),
+		fmt.Sprintf("%s %s", labelStyle.Render("Etiquetas: "), valStyle.Render(fmt.Sprintf("%d", uniqueTags))),
+	}
+
+	// Count PARA folders dynamically
+	paraFolders := m.store.DetectPARAFolders()
+	if len(paraFolders) > 0 {
+		statsRows = append(statsRows, "")
+		statsRows = append(statsRows, lipgloss.NewStyle().Foreground(theme.Muted).Bold(true).Render("Vault (PARA):"))
+		for _, pf := range paraFolders {
+			count := 0
+			for _, n := range m.allNotes {
+				if strings.HasPrefix(n.Path, pf+"/") || n.Path == pf {
+					count++
+				}
+			}
+			displayName := pf
+			runes := []rune(displayName)
+			if len(runes) > 15 {
+				displayName = string(runes[:12]) + "..."
+			}
+			statsRows = append(statsRows, fmt.Sprintf("%s %s", labelStyle.Render(fmt.Sprintf("  %-11s ", displayName+":")), valStyle.Render(fmt.Sprintf("%d", count))))
+		}
+	}
+
+	statsContent := lipgloss.JoinVertical(lipgloss.Left, append([]string{statsTitle}, statsRows...)...)
+	statsCard := statsContent
+	if width > 6 {
+		statsCard = cardStyle.Render(statsContent)
+	}
+
+	// ─── ACCESOS RÁPIDOS ───
+	quickTitle := statsTitleStyle.Render("ACCESOS RÁPIDOS")
+
+	keyStyle := lipgloss.NewStyle().
+		Foreground(theme.Background).
+		Background(theme.Accent).
+		Bold(true).
+		Padding(0, 1)
+
+	descStyle := lipgloss.NewStyle().Foreground(theme.Text)
+
+	renderHint := func(key, desc string) string {
+		k := keyStyle.Render(key)
+		d := descStyle.Render(desc)
+		// Right align the key or just show it cleanly with dots or space
+		spacerWidth := width - 4 - lipgloss.Width(k) - lipgloss.Width(d)
+		if spacerWidth < 1 {
+			spacerWidth = 1
+		}
+		spacer := strings.Repeat(" ", spacerWidth)
+		return d + spacer + k
+	}
+
+	quickRows := []string{
+		renderHint("/", "Comandos"),
+		renderHint("n", "Nueva nota"),
+		renderHint("ctrl+v", "Pegar clipboard"),
+		renderHint("e", "Editar nota"),
+		renderHint("s", "Sincronizar git"),
+		renderHint("g", "Ver grafo"),
+		renderHint("?", "Ayuda"),
+		renderHint("q", "Salir"),
+	}
+
+	quickContent := lipgloss.JoinVertical(lipgloss.Left, append([]string{quickTitle}, quickRows...)...)
+	quickCard := quickContent
+	if width > 6 {
+		quickCard = cardStyle.Render(quickContent)
+	}
+
+	// ─── TIP / INFO ───
+	infoCard := ""
+	remainingHeight := height - lipgloss.Height(statsCard) - lipgloss.Height(quickCard)
+	if remainingHeight >= 6 && width > 6 {
+		infoTitle := statsTitleStyle.Foreground(theme.Warning).Render("CITA / TIP")
+		// Let's use a nice quote
+		quoteText := lipgloss.NewStyle().
+			Foreground(theme.Muted).
+			Italic(true).
+			Width(width - 4).
+			Render("“El código es como el humor. Cuando tienes que explicarlo, es malo.”\n— Cory House")
+		infoContent := lipgloss.JoinVertical(lipgloss.Left, infoTitle, quoteText)
+		infoCard = cardStyle.Render(infoContent)
+	}
+
+	// Join all right column elements vertically with spacing
+	return lipgloss.JoinVertical(lipgloss.Left, statsCard, quickCard, infoCard)
 }
 
 // Run constructs the root model and starts the Bubble Tea program.
