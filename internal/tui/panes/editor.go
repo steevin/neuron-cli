@@ -314,6 +314,10 @@ func (e *Editor) SplashView(noteCount, tagCount int) string {
 		Foreground(e.theme.Info).
 		Render("Press any key to enter vault →")
 
+	copyright := lipgloss.NewStyle().
+		Foreground(e.theme.Muted).
+		Render("Copyleft 🄲 2025-2026 Daniel Steevin · GNU GPL v3")
+
 	content := lipgloss.JoinVertical(lipgloss.Center,
 		logo,
 		"",
@@ -329,6 +333,8 @@ func (e *Editor) SplashView(noteCount, tagCount int) string {
 		"  "+keyRow2,
 		"",
 		instruction,
+		"",
+		copyright,
 	)
 
 	return lipgloss.NewStyle().

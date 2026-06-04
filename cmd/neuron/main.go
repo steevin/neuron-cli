@@ -650,6 +650,10 @@ var versionCmd = &cobra.Command{
 	Long:  "Print the neuron build version and exit.",
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Printf("neuron version %s\n", version)
+		fmt.Println("Copyright (C) 2025-2026 Daniel Steevin")
+		fmt.Println("License GPLv3+: GNU GPL version 3 or later <https://gnu.org/licenses/gpl.html>.")
+		fmt.Println("This is free software: you are free to change and redistribute it.")
+		fmt.Println("There is NO WARRANTY, to the extent permitted by law.")
 	},
 }
 
