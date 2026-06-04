@@ -12,6 +12,9 @@
 [![Go Version](https://img.shields.io/github/go-mod/go-version/steevin/neuron-cli?style=for-the-badge&color=8a2be2&logo=go)](go.mod)
 [![License](https://img.shields.io/badge/license-GPL--3.0-00d2ff?style=for-the-badge)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/steevin/neuron-cli?style=for-the-badge&color=yellow)](https://github.com/steevin/neuron-cli/stargazers)
+[![Go Report Card](https://goreportcard.com/badge/github.com/steevin/neuron-cli?style=for-the-badge)](https://goreportcard.com/report/github.com/steevin/neuron-cli)
+[![Go Reference](https://img.shields.io/badge/pkg.go.dev-reference-00d2ff?logo=go&logoColor=white&style=for-the-badge)](https://pkg.go.dev/github.com/steevin/neuron-cli)
+[![Coverage](https://img.shields.io/codecov/c/github/steevin/neuron-cli?style=for-the-badge&color=8a2be2&logo=codecov)](https://app.codecov.io/gh/steevin/neuron-cli)
 
 </div>
 
