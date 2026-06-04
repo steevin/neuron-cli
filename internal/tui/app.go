@@ -1511,8 +1511,20 @@ func (m Model) renderRightColumn(height, width int) string {
 		quickCard = cardStyle.Render(quickContent)
 	}
 
+	// ─── LICENSE ───
+	licenseTitle := statsTitleStyle.Render("LICENSE")
+	licenseRows := []string{
+		fmt.Sprintf("%s", labelStyle.Render("GNU GPL v3 (Copyleft)")),
+		fmt.Sprintf("%s", lipgloss.NewStyle().Foreground(theme.Muted).Render("🄲 2025-2026 Daniel Steevin")),
+	}
+	licenseContent := lipgloss.JoinVertical(lipgloss.Left, append([]string{licenseTitle}, licenseRows...)...)
+	licenseCard := licenseContent
+	if width > 6 {
+		licenseCard = cardStyle.Render(licenseContent)
+	}
+
 	// Join all right column elements vertically with spacing
-	return lipgloss.JoinVertical(lipgloss.Left, statsCard, quickCard)
+	return lipgloss.JoinVertical(lipgloss.Left, statsCard, quickCard, licenseCard)
 }
 
 // Run constructs the root model and starts the Bubble Tea program.
