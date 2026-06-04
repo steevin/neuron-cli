@@ -1,5 +1,5 @@
-// NeuronCLI — a terminal-based personal knowledge manager with Obsidian-compatible
-// Markdown vaults, local AI embeddings, and an MCP server for AI agent integration.
+// NeuronCLI — un gestor de conocimiento personal en la terminal, compatible con bóvedas de Obsidian,
+// embeddings de IA locales y un servidor MCP para agentes.
 package main
 
 import (
@@ -20,7 +20,7 @@ import (
 	"github.com/steevin/neuron-cli/internal/tui"
 )
 
-// version is injected at build time via -ldflags "-X main.version=<tag>".
+// la versión se inyecta al compilar con -ldflags "-X main.version=<tag>".
 var version = "1.0.29"
 
 var rootCmd = &cobra.Command{
@@ -60,8 +60,7 @@ Update:
 Run 'neuron help <command>' for detailed usage of any subcommand.`,
 	SilenceUsage: true,
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
-		// Skip banner for the bare version command — it has its own output.
-		// Also skip for mcp command, as it expects clean JSON-RPC over stdio.
+		// saltamos el banner en comandos como version o mcp para no ensuciar la salida.
 		if cmd.Name() == "version" || cmd.Name() == "mcp" || cmd.Name() == "anlly" {
 			return
 		}
@@ -152,7 +151,7 @@ var addCmd = &cobra.Command{
 	},
 }
 
-// listCmd lists notes in the vault with optional filtering.
+// listCmd lista las notas del vault (soporta filtros opcionales).
 var listCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List notes in your vault",
@@ -169,14 +168,13 @@ var listCmd = &cobra.Command{
 
 		if query != "" {
 			if cfg.AI.Enabled {
-				// Use semantic search
+				// buscamos por semántica (IA)
 				idx, err := search.NewSemanticIndex(cfg)
 				if err != nil {
 					return fmt.Errorf("semantic search setup failed: %v", err)
 				}
 				noteList, _ := store.List(notes.ListOptions{})
-				// Ideally Rebuild should be cached, but for CLI we build on-the-fly or load from db if chromem persists.
-				// chromem-go NewDB() is in-memory by default, but we can just rebuild it fast enough for a small vault.
+				// TODO: cachear el índice para no reconstruirlo al vuelo (aunque es súper rápido en vaults pequeños).
 				fmt.Println("Generating embeddings...")
 				_ = idx.Rebuild(cmd.Context(), noteList)
 				res, err := idx.Search(cmd.Context(), query, limit)
@@ -190,7 +188,7 @@ var listCmd = &cobra.Command{
 				}
 				return nil
 			} else {
-				// Use BM25 search
+				// búsqueda por palabras (BM25)
 				idx := search.NewIndex()
 				noteList, _ := store.List(notes.ListOptions{})
 				idx.Rebuild(noteList)
@@ -220,11 +218,11 @@ var listCmd = &cobra.Command{
 	},
 }
 
-// resolveEditor returns the editor to use, consulting (in order):
-//  1. cfg.Editor (set via `neuron config set editor <cmd>` or the config file)
-//  2. The $EDITOR environment variable
-//  3. The $VISUAL environment variable
-//  4. "vi" as a last-resort fallback
+// resolveEditor decide qué editor usar en este orden:
+//  1. cfg.Editor (guardado en config.toml)
+//  2. $EDITOR
+//  3. $VISUAL
+//  4. "vi" como último recurso
 func resolveEditor(cfg *config.Config) string {
 	editor := "vi"
 	if cfg.Editor != "" {
@@ -235,10 +233,7 @@ func resolveEditor(cfg *config.Config) string {
 		editor = e
 	}
 
-	// Sanitize the input to prevent arbitrary shell command injection
-	// if the user provided arguments like `vi; rm -rf /`. This strictly uses
-	// the first field as the command. If users need flags, they should use a
-	// wrapper script.
+	// limpiamos la entrada por si alguien intentó inyectar comandos raros (ej. vi; rm -rf /)
 	editorParts := strings.Fields(editor)
 	if len(editorParts) > 0 {
 		return editorParts[0]
@@ -246,7 +241,7 @@ func resolveEditor(cfg *config.Config) string {
 	return "vi"
 }
 
-// editCmd opens an existing note in the configured editor.
+// editCmd abre una nota en el editor que hayas configurado.
 var editCmd = &cobra.Command{
 	Use:   "edit [id-or-title]",
 	Short: "Open a note in your editor",
@@ -283,7 +278,7 @@ var editCmd = &cobra.Command{
 	},
 }
 
-// rmCmd deletes a note from the vault.
+// rmCmd borra una nota del vault.
 var rmCmd = &cobra.Command{
 	Use:   "rm [id-or-title]",
 	Short: "Delete a note",
@@ -331,7 +326,7 @@ var rmCmd = &cobra.Command{
 	},
 }
 
-// openCmd reveals the vault folder in Finder (macOS).
+// openCmd abre la carpeta del vault en Finder.
 var openCmd = &cobra.Command{
 	Use:   "open",
 	Short: "Open vault folder in Finder",
@@ -343,7 +338,7 @@ var openCmd = &cobra.Command{
 	},
 }
 
-// statsCmd prints aggregate statistics about the vault.
+// statsCmd muestra estadísticas básicas del vault.
 var statsCmd = &cobra.Command{
 	Use:   "stats",
 	Short: "Show vault statistics",
@@ -364,7 +359,7 @@ var statsCmd = &cobra.Command{
 	},
 }
 
-// todayCmd opens or creates the daily note for the current date.
+// todayCmd abre (o crea) la nota diaria de hoy.
 var todayCmd = &cobra.Command{
 	Use:   "today",
 	Short: "Open or create today's daily note",
@@ -393,7 +388,7 @@ var todayCmd = &cobra.Command{
 	},
 }
 
-// moveCmd moves a note to a target folder in the vault (e.g. PARA folders)
+// moveCmd mueve una nota a otra carpeta del vault.
 var moveCmd = &cobra.Command{
 	Use:   "move [id-or-title] [folder]",
 	Short: "Move a note to a folder",
@@ -473,7 +468,7 @@ var moveCmd = &cobra.Command{
 	},
 }
 
-// syncCmd synchronises the vault with a Git remote.
+// syncCmd sincroniza el vault con un remoto de Git.
 var syncCmd = &cobra.Command{
 	Use:   "sync",
 	Short: "Sync vault with Git remote",
@@ -499,7 +494,7 @@ var syncCmd = &cobra.Command{
 	},
 }
 
-// mcpCmd starts the Model Context Protocol server.
+// mcpCmd inicia el servidor MCP.
 var mcpCmd = &cobra.Command{
 	Use:   "mcp",
 	Short: "Start the MCP server for AI agent integration",
@@ -521,7 +516,7 @@ to AI agents such as Claude Desktop, Cursor, or any MCP-compatible client.`,
 			return fmt.Errorf("failed to load vault: %v", err)
 		}
 
-		// Build index
+		// construimos el índice
 		idx := search.NewIndex()
 		noteList, _ := store.List(notes.ListOptions{})
 		idx.Rebuild(noteList)
@@ -535,15 +530,15 @@ to AI agents such as Claude Desktop, Cursor, or any MCP-compatible client.`,
 	},
 }
 
-// configCmd allows the user to inspect and change NeuronCLI settings without
-// editing the TOML file by hand.
+// configCmd te permite ver y cambiar la configuración de NeuronCLI sin
+// tener que editar el archivo TOML a mano.
 //
-// Usage:
+// Uso:
 //
-//	neuron config get <key>          — print the current value of a setting
-//	neuron config set <key> <value>  — update a setting and save it
+//	neuron config get <key>          — muestra el valor actual
+//	neuron config set <key> <value>  — actualiza un valor
 //
-// Supported keys: vault_path, editor, theme, git_remote
+// Llaves soportadas: vault_path, editor, theme, git_remote
 var configCmd = &cobra.Command{
 	Use:   "config",
 	Short: "Read or update NeuronCLI settings",
@@ -619,7 +614,7 @@ var configSetCmd = &cobra.Command{
 	},
 }
 
-// tuiCmd launches the interactive Bubble Tea TUI.
+// tuiCmd lanza la interfaz gráfica en la terminal (TUI).
 var tuiCmd = &cobra.Command{
 	Use:   "tui",
 	Short: "Open the interactive TUI",
@@ -633,7 +628,7 @@ var tuiCmd = &cobra.Command{
 	},
 }
 
-// versionCmd prints the build version.
+// versionCmd imprime la versión.
 var versionCmd = &cobra.Command{
 	Use:   "version",
 	Short: "Print version",
@@ -643,7 +638,7 @@ var versionCmd = &cobra.Command{
 	},
 }
 
-// anllyCmd is a special hidden command.
+// anllyCmd es un comando especial y oculto.
 var anllyCmd = &cobra.Command{
 	Use:    "anlly",
 	Hidden: true,
@@ -654,34 +649,34 @@ var anllyCmd = &cobra.Command{
 }
 
 func init() {
-	// addCmd flags
+	// flags de addCmd
 	addCmd.Flags().Bool("from-clipboard", false, "Populate note body from clipboard contents")
 	addCmd.Flags().StringSlice("tag", nil, "Tags to apply to the new note (repeatable)")
 	addCmd.Flags().String("template", "", "Name of the note template to use")
 	addCmd.Flags().String("folder", "", "Folder in the vault to save the note in (e.g. '1. Projects')")
 	addCmd.Flags().Bool("no-edit", false, "Create the note without opening the editor")
 
-	// listCmd flags
+	// flags de listCmd
 	listCmd.Flags().StringSlice("tag", nil, "Filter by tag (repeatable)")
 	listCmd.Flags().StringP("query", "q", "", "Full-text or semantic search query")
 	listCmd.Flags().Int("limit", 50, "Maximum number of notes to display")
 
-	// rmCmd flags
+	// flags de rmCmd
 	rmCmd.Flags().BoolP("force", "f", false, "Skip confirmation prompt")
 
-	// syncCmd flags
+	// flags de syncCmd
 	syncCmd.Flags().String("remote", "", "Override the configured Git remote")
 	syncCmd.Flags().Bool("pull", false, "Pull from remote before pushing")
 
-	// mcpCmd flags
+	// flags de mcpCmd
 	mcpCmd.Flags().String("vault", "", "Override vault path for this session")
 }
 
 func main() {
-	// Wire config sub-subcommands.
+	// enganchamos los subcomandos de config.
 	configCmd.AddCommand(configGetCmd, configSetCmd)
 
-	// Register all subcommands.
+	// registramos todos los comandos principales.
 	rootCmd.AddCommand(
 		addCmd,
 		listCmd,
@@ -700,7 +695,7 @@ func main() {
 		initAppCmd,
 	)
 
-	// When neuron is invoked with no subcommand, fall through to the TUI.
+	// si corren neuron sin argumentos, abrimos la TUI por defecto.
 	rootCmd.RunE = tuiCmd.RunE
 
 	if err := rootCmd.Execute(); err != nil {

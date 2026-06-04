@@ -12,10 +12,10 @@ import (
 	"github.com/google/uuid"
 )
 
-// ErrNoteNotFound is returned when Get cannot locate a note by ID or title.
+// ErrNoteNotFound se devuelve cuando no encontramos la nota.
 var ErrNoteNotFound = fmt.Errorf("note not found")
 
-// ListOptions controls filtering, sorting, and pagination for Store.List.
+// ListOptions controla cómo filtramos y paginamos las notas.
 type ListOptions struct {
 	Tags   []string // Filter by tags (AND logic — note must have ALL tags)
 	Query  string   // Case-insensitive substring match against note title
@@ -23,16 +23,15 @@ type ListOptions struct {
 	SortBy string   // "updated" (default), "created", or "title"
 }
 
-// Store is a file-based note store rooted at a vault directory.
+// Store maneja las notas en disco a partir de la raíz del vault.
 type Store struct {
 	VaultPath string         // Absolute path to the vault root
 	Vault     *ObsidianVault // Detected Obsidian metadata (may be non-Obsidian)
 }
 
-// NewStore creates (if necessary) and returns a Store for the given vault path.
-// A leading "~" in vaultPath is expanded to the user's home directory.
+// NewStore inicializa el store y expande el ~ si viene en la ruta.
 func NewStore(vaultPath string) (*Store, error) {
-	// Expand tilde.
+	// expandimos el tilde al home del usuario
 	if strings.HasPrefix(vaultPath, "~/") || vaultPath == "~" {
 		home, err := os.UserHomeDir()
 		if err != nil {
@@ -41,7 +40,7 @@ func NewStore(vaultPath string) (*Store, error) {
 		vaultPath = home + vaultPath[1:]
 	}
 
-	// Ensure the directory exists.
+	// creamos el directorio si no existe
 	if err := os.MkdirAll(vaultPath, 0o700); err != nil {
 		return nil, fmt.Errorf("notes: creating vault directory %q: %w", vaultPath, err)
 	}
@@ -57,9 +56,7 @@ func NewStore(vaultPath string) (*Store, error) {
 	}, nil
 }
 
-// Create writes a new note with the given folder, title, tags, and body content.
-// It generates a UUID, derives a safe filename from the title, and returns
-// the populated Note.
+// Create genera un UUID, limpia el nombre del archivo y guarda la nota nueva.
 func (s *Store) Create(folder string, title string, tags []string, content string) (*Note, error) {
 	id := uuid.New().String()
 	filename := safeFilename(title) + ".md"
@@ -67,7 +64,7 @@ func (s *Store) Create(folder string, title string, tags []string, content strin
 	var dirPath string
 	if folder != "" {
 		dirPath = filepath.Join(s.VaultPath, folder)
-		// Ensure subdirectory exists
+		// aseguramos que la subcarpeta exista
 		if err := os.MkdirAll(dirPath, 0o700); err != nil {
 			return nil, fmt.Errorf("notes: creating subdirectory %q: %w", folder, err)
 		}
@@ -77,7 +74,7 @@ func (s *Store) Create(folder string, title string, tags []string, content strin
 
 	fullPath := filepath.Join(dirPath, filename)
 
-	// Avoid overwriting an existing file by appending a suffix.
+	// si ya existe, le agregamos un timestamp para no pisarlo
 	if _, err := os.Stat(fullPath); err == nil {
 		base := strings.TrimSuffix(filename, ".md")
 		fullPath = filepath.Join(dirPath, fmt.Sprintf("%s-%d.md", base, time.Now().UnixNano()))
@@ -110,12 +107,9 @@ func (s *Store) Create(folder string, title string, tags []string, content strin
 	return note, nil
 }
 
-// DetectPARAFolders returns standard PARA directory names.
-// It detects whether the user is using numbered names (e.g. "1. Projects") or simple names (e.g. "Projects").
+// DetectPARAFolders revisa si el usuario usa carpetas numeradas (ej. "1. Projects") o normales ("Projects").
 func (s *Store) DetectPARAFolders() []string {
-	// Look at the root of the vault for folders containing PARA keywords.
-	// Defaults to numbered folders starting from 1 if none detected.
-	// standard defaults:
+	// revisamos la raíz buscando las palabras clave del método PARA. Si no hay nada, usamos los valores por defecto numerados:
 	defaults := []string{"1. Projects", "2. Areas", "3. Resources", "4. Archive"}
 	
 	entries, err := os.ReadDir(s.VaultPath)
@@ -123,7 +117,7 @@ func (s *Store) DetectPARAFolders() []string {
 		return defaults
 	}
 
-	found := make(map[string]string) // map key "projects" -> actual folder name
+	found := make(map[string]string) // mapa "projects" -> nombre real de la carpeta
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
@@ -142,35 +136,19 @@ func (s *Store) DetectPARAFolders() []string {
 	}
 
 	result := make([]string, 4)
-	if name, ok := found["projects"]; ok {
-		result[0] = name
-	} else {
-		result[0] = "1. Projects"
-	}
-
-	if name, ok := found["areas"]; ok {
-		result[1] = name
-	} else {
-		result[1] = "2. Areas"
-	}
-
-	if name, ok := found["resources"]; ok {
-		result[2] = name
-	} else {
-		result[2] = "3. Resources"
-	}
-
-	if name, ok := found["archives"]; ok {
-		result[3] = name
-	} else {
-		result[3] = "4. Archive"
+	keys := []string{"projects", "areas", "resources", "archives"}
+	for i, key := range keys {
+		if name, ok := found[key]; ok {
+			result[i] = name
+		} else {
+			result[i] = defaults[i]
+		}
 	}
 
 	return result
 }
 
-// ExtraFolders returns top-level vault directories that are not PARA folders
-// and not hidden/system directories (e.g. .obsidian, .trash).
+// ExtraFolders devuelve las carpetas raíz que no son del método PARA ni del sistema.
 func (s *Store) ExtraFolders() []string {
 	paraFolders := s.DetectPARAFolders()
 	paraSet := make(map[string]struct{}, len(paraFolders))
@@ -208,7 +186,7 @@ func (s *Store) ExtraFolders() []string {
 	return extra
 }
 
-// Move shifts a note to a different folder inside the vault.
+// Move mueve la nota a otra carpeta del vault.
 func (s *Store) Move(idOrTitle string, targetFolder string) error {
 	note, err := s.Get(idOrTitle)
 	if err != nil {
@@ -225,7 +203,7 @@ func (s *Store) Move(idOrTitle string, targetFolder string) error {
 	}
 
 	dest := filepath.Join(targetDir, filepath.Base(note.Path))
-	// Avoid collisions
+	// evitamos colisiones de nombres
 	if _, statErr := os.Stat(dest); statErr == nil {
 		stem := strings.TrimSuffix(filepath.Base(note.Path), ".md")
 		dest = filepath.Join(targetDir, fmt.Sprintf("%s-%d.md", stem, time.Now().UnixNano()))
@@ -235,7 +213,7 @@ func (s *Store) Move(idOrTitle string, targetFolder string) error {
 		return fmt.Errorf("notes: moving note: %w", err)
 	}
 
-	// Update note in-memory path (optional, but good for caller)
+	// actualizamos la ruta en memoria por si el caller la necesita
 	note.Path = dest
 	rel, relErr := filepath.Rel(s.VaultPath, dest)
 	if relErr == nil {
@@ -245,8 +223,7 @@ func (s *Store) Move(idOrTitle string, targetFolder string) error {
 }
 
 
-// Get retrieves a note by UUID (exact match), then by title (case-insensitive),
-// then by filename stem. Returns ErrNoteNotFound when no match exists.
+// Get busca primero por UUID, luego por título y por último por nombre de archivo.
 func (s *Store) Get(idOrTitle string) (*Note, error) {
 	all, err := s.List(ListOptions{})
 	if err != nil {
@@ -255,21 +232,21 @@ func (s *Store) Get(idOrTitle string) (*Note, error) {
 
 	lowerQuery := strings.ToLower(idOrTitle)
 
-	// Pass 1: exact UUID match.
+	// buscamos por UUID exacto
 	for _, n := range all {
 		if n.ID == idOrTitle {
 			return n, nil
 		}
 	}
 
-	// Pass 2: case-insensitive title match.
+	// si no, por título (ignorando mayúsculas)
 	for _, n := range all {
 		if strings.ToLower(n.Title) == lowerQuery {
 			return n, nil
 		}
 	}
 
-	// Pass 3: filename stem match.
+	// por último, por nombre de archivo
 	for _, n := range all {
 		stem := strings.TrimSuffix(filepath.Base(n.Path), ".md")
 		if strings.ToLower(stem) == lowerQuery {
@@ -280,18 +257,17 @@ func (s *Store) Get(idOrTitle string) (*Note, error) {
 	return nil, ErrNoteNotFound
 }
 
-// List walks the vault, parses every .md file, applies opts filters,
-// sorts, and returns the resulting slice.
+// List recorre el vault, lee los .md y devuelve los resultados filtrados y ordenados.
 func (s *Store) List(opts ListOptions) ([]*Note, error) {
 	var notes []*Note
 
 	err := filepath.WalkDir(s.VaultPath, func(path string, d os.DirEntry, walkErr error) error {
 		if walkErr != nil {
-			// Skip unreadable entries rather than aborting the whole walk.
+			// si no podemos leer algo, lo saltamos para no romper todo
 			return nil
 		}
 
-		// Skip hidden directories and Obsidian system directories.
+		// ignoramos carpetas ocultas y de sistema de Obsidian
 		if d.IsDir() {
 			name := d.Name()
 			if strings.HasPrefix(name, ".") || name == ".obsidian" || name == ".trash" {
@@ -300,23 +276,23 @@ func (s *Store) List(opts ListOptions) ([]*Note, error) {
 			return nil
 		}
 
-		// Only process markdown files.
+		// solo nos importan los markdown
 		if !strings.EqualFold(filepath.Ext(path), ".md") {
 			return nil
 		}
 
-		// Skip Obsidian system files just in case the walk enters them.
+		// por si acaso nos metemos en alguna carpeta de Obsidian, evitamos sus archivos
 		if IsObsidianFile(path) {
 			return nil
 		}
 
 		note, parseErr := ParseFile(path)
 		if parseErr != nil {
-			// Malformed files are skipped silently.
+			// los archivos mal formados los ignoramos en silencio
 			return nil
 		}
 
-		// Compute relative path.
+		// calculamos la ruta relativa
 		rel, relErr := filepath.Rel(s.VaultPath, path)
 		if relErr == nil {
 			note.RelPath = rel
@@ -346,7 +322,7 @@ func (s *Store) List(opts ListOptions) ([]*Note, error) {
 	return filtered, nil
 }
 
-// Update sets note.Updated to now and rewrites the file.
+// Update actualiza la fecha de modificación y reescribe el archivo.
 func (s *Store) Update(note *Note) error {
 	note.Updated = time.Now()
 	note.RawContent = ToMarkdown(note)
@@ -357,7 +333,7 @@ func (s *Store) Update(note *Note) error {
 	return nil
 }
 
-// Reload re-reads and parses a single note from disk, updating its fields.
+// Reload vuelve a leer la nota desde el disco.
 func (s *Store) Reload(note *Note) (*Note, error) {
 	fresh, err := ParseFile(note.Path)
 	if err != nil {
@@ -371,7 +347,7 @@ func (s *Store) Reload(note *Note) (*Note, error) {
 }
 
 
-// Delete moves the note to the vault's .trash folder instead of wiping it.
+// Delete mueve la nota a la papelera en lugar de borrarla definitivamente.
 func (s *Store) Delete(idOrTitle string) error {
 	note, err := s.Get(idOrTitle)
 	if err != nil {
@@ -384,7 +360,7 @@ func (s *Store) Delete(idOrTitle string) error {
 	}
 
 	dest := filepath.Join(trashDir, filepath.Base(note.Path))
-	// Avoid collisions in .trash by appending a timestamp.
+	// si ya hay algo en la papelera con ese nombre, le ponemos timestamp
 	if _, statErr := os.Stat(dest); statErr == nil {
 		stem := strings.TrimSuffix(filepath.Base(note.Path), ".md")
 		dest = filepath.Join(trashDir, fmt.Sprintf("%s-%d.md", stem, time.Now().UnixNano()))
@@ -396,7 +372,7 @@ func (s *Store) Delete(idOrTitle string) error {
 	return nil
 }
 
-// Count returns the number of .md files in the vault (system dirs excluded).
+// Count cuenta cuántos archivos .md tenemos.
 func (s *Store) Count() (int, error) {
 	notes, err := s.List(ListOptions{})
 	if err != nil {
@@ -405,7 +381,7 @@ func (s *Store) Count() (int, error) {
 	return len(notes), nil
 }
 
-// Tags returns a map of tag → note count.
+// Tags devuelve un mapa con la frecuencia de cada etiqueta.
 func (s *Store) Tags() (map[string]int, error) {
 	notes, err := s.List(ListOptions{})
 	if err != nil {
@@ -421,8 +397,7 @@ func (s *Store) Tags() (map[string]int, error) {
 	return counts, nil
 }
 
-// safeFilename converts a title into a lowercase, hyphen-separated filename
-// stem capped at 80 characters.
+// safeFilename limpia el título para usarlo como nombre de archivo (solo letras, números y guiones).
 func safeFilename(title string) string {
 	var sb strings.Builder
 	prevHyphen := false
@@ -438,7 +413,7 @@ func safeFilename(title string) string {
 	s := strings.TrimRight(sb.String(), "-")
 	if len(s) > 80 {
 		s = s[:80]
-		// Don't end on a hyphen.
+		// que no termine en guion
 		s = strings.TrimRight(s, "-")
 	}
 	if s == "" {
@@ -447,9 +422,9 @@ func safeFilename(title string) string {
 	return s
 }
 
-// matchesListOptions reports whether a note satisfies all ListOptions filters.
+// matchesListOptions verifica si la nota cumple con los filtros.
 func matchesListOptions(n *Note, opts ListOptions) bool {
-	// Tag filter (AND logic).
+	// filtro por etiquetas (tienen que estar todas)
 	if len(opts.Tags) > 0 {
 		noteTagSet := make(map[string]struct{}, len(n.Tags))
 		for _, t := range n.Tags {
@@ -462,7 +437,7 @@ func matchesListOptions(n *Note, opts ListOptions) bool {
 		}
 	}
 
-	// Title substring filter.
+	// filtro por parte del título
 	if opts.Query != "" {
 		if !strings.Contains(strings.ToLower(n.Title), strings.ToLower(opts.Query)) {
 			return false
@@ -472,7 +447,7 @@ func matchesListOptions(n *Note, opts ListOptions) bool {
 	return true
 }
 
-// SortNotes sorts notes in place according to the requested field.
+// SortNotes ordena las notas según lo que pidan.
 func SortNotes(notes []*Note, by string) {
 	switch by {
 	case "created":

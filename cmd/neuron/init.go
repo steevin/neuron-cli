@@ -19,7 +19,7 @@ var initAppCmd = &cobra.Command{
 		cfg, err := config.Load()
 		if err != nil || cfg == nil {
 			cfg = &config.Config{
-				Theme: "dark", // default
+				Theme: "dark", // por defecto
 			}
 		}
 
@@ -70,7 +70,7 @@ var initAppCmd = &cobra.Command{
 		}
 
 		if setupPARA {
-			// Resolve tilde if needed
+			// resolvemos el tilde si es necesario
 			resolvedPath := vaultPath
 			if strings.HasPrefix(resolvedPath, "~/") || resolvedPath == "~" {
 				home, err := os.UserHomeDir()
