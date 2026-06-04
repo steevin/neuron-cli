@@ -196,6 +196,13 @@ If you find Neuron CLI useful, you can help support the development by donating 
 
 ---
 
+### <img src="https://img.shields.io/badge/--8a2be2?style=flat-square" width="10" height="20"> ✉️ CONTACT
+
+For support, feedback, business inquiries, or any other questions, please contact:
+[**neuron@steevin.com**](mailto:neuron@steevin.com)
+
+---
+
 <div align="center">
 Made by Daniel Steevin
 <br>
