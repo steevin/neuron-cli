@@ -29,7 +29,7 @@ import (
 type focus int
 
 const (
-	focusSidebar     focus = iota
+	focusSidebar focus = iota
 	focusEditor
 	focusSearch
 	focusNewNote      // inline note creation mode
@@ -72,25 +72,25 @@ type pasteNoteMsg struct {
 // Model is the root Bubble Tea model. It owns all child pane models and
 // orchestrates focus, layout, and data flow.
 type Model struct {
-	cfg           *config.Config
-	store         *notes.Store
-	theme         *styles.Theme
-	sidebar       panes.Sidebar
-	editor        panes.Editor
-	search        panes.SearchPane
-	newNote       textinput.Model // inline new-note input
-	spinner       spinner.Model
-	help          help.Model
-	showHelp      bool
-	syncing       bool
-	focused       focus
-	allNotes      []*notes.Note // unfiltered master list
-	width         int
-	height        int
-	ready         bool // true once the terminal size is known
-	err           error
-	statusMsg     string
-	isSuccess     bool   // whether statusMsg should render green
+	cfg             *config.Config
+	store           *notes.Store
+	theme           *styles.Theme
+	sidebar         panes.Sidebar
+	editor          panes.Editor
+	search          panes.SearchPane
+	newNote         textinput.Model // inline new-note input
+	spinner         spinner.Model
+	help            help.Model
+	showHelp        bool
+	syncing         bool
+	focused         focus
+	allNotes        []*notes.Note // unfiltered master list
+	width           int
+	height          int
+	ready           bool // true once the terminal size is known
+	err             error
+	statusMsg       string
+	isSuccess       bool     // whether statusMsg should render green
 	showSplash      bool     // controls splash screen
 	clipboardBody   string   // clipboard content staged for next note creation
 	pendingTitle    string   // title staged while selecting PARA folder
@@ -101,15 +101,15 @@ type Model struct {
 }
 
 type keyMap struct {
-	Tab   key.Binding
+	Tab    key.Binding
 	Search key.Binding
-	New   key.Binding
-	Paste key.Binding
-	Edit  key.Binding
-	Sync  key.Binding
-	Graph key.Binding
-	Help  key.Binding
-	Quit  key.Binding
+	New    key.Binding
+	Paste  key.Binding
+	Edit   key.Binding
+	Sync   key.Binding
+	Graph  key.Binding
+	Help   key.Binding
+	Quit   key.Binding
 }
 
 func (k keyMap) ShortHelp() []key.Binding {
@@ -339,7 +339,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// while preventing terminal layout issues.
 			text = strings.ReplaceAll(text, "\r\n", "\n")
 			text = strings.ReplaceAll(text, "\r", "\n")
-			
+
 			if text == "" {
 				break
 			}
@@ -658,7 +658,6 @@ func (m Model) View() string {
 	if bodyHeight < 1 {
 		bodyHeight = 1
 	}
-
 
 	rightWidth := m.width * 25 / 100
 	if rightWidth < 22 {
@@ -1340,7 +1339,6 @@ func appendTextToNote(store *notes.Store, note *notes.Note, text string) tea.Msg
 	return pasteNoteMsg{note: fresh, bytes: len(text)}
 }
 
-
 // formatBytes returns a human-readable byte size string (B / KB / MB).
 func formatBytes(n int) string {
 	switch {
@@ -1480,6 +1478,8 @@ func (m Model) renderRightColumn(height, width int) string {
 	}
 
 	quickRows := []string{
+		renderHint("↑/↓", "Navigate"),
+		renderHint("Enter", "Select/Confirm"),
 		renderHint("/", "Commands"),
 		renderHint("n", "New note"),
 		renderHint("ctrl+v", "Paste clipboard"),
