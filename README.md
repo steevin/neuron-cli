@@ -6,9 +6,12 @@
 
 **A terminal knowledge manager that doesn't get in your way.**
 
+*If you like Neuron CLI, please consider giving it a ⭐ to help make it more visible!*
+
 [![CI](https://img.shields.io/github/actions/workflow/status/steevin/neuron-cli/ci.yml?style=for-the-badge&color=00d2ff&logo=github)](https://github.com/steevin/neuron-cli/actions)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/steevin/neuron-cli?style=for-the-badge&color=8a2be2&logo=go)](go.mod)
-[![License](https://img.shields.io/badge/license-BUSL--1.1-00d2ff?style=for-the-badge)](LICENSE)
+[![License](https://img.shields.io/badge/license-GPL--3.0-00d2ff?style=for-the-badge)](LICENSE)
+[![Stars](https://img.shields.io/github/stars/steevin/neuron-cli?style=for-the-badge&color=yellow)](https://github.com/steevin/neuron-cli/stargazers)
 
 </div>
 
@@ -196,6 +199,22 @@ If you find Neuron CLI useful, you can help support the development by donating 
 
 ---
 
+### <img src="https://img.shields.io/badge/--00d2ff?style=flat-square" width="10" height="20"> 📄 LICENSE & ATTRIBUTION
+
+Neuron CLI is open-source software licensed under the **GNU GPL v3**.
+
+#### ⚖️ What this means
+* **Copyleft:** Any modifications or derivatives of this code **must** also be open-sourced under the GPL v3.
+* **Keep Copyright:** You must retain all original copyright notices and author info in the source files.
+* **State Changes:** You must prominently state any changes made to the original files.
+
+#### 📢 How to Attribute
+If you redistribute, fork, or use parts of this codebase in public projects, please show your support and maintain visibility by adding the following attribution to your repository's README or documentation:
+
+> This project uses code/components from [Neuron CLI](https://github.com/steevin/neuron-cli) by [Daniel Steevin](https://github.com/steevin), licensed under the GNU GPL v3.
+
+---
+
 ### <img src="https://img.shields.io/badge/--8a2be2?style=flat-square" width="10" height="20"> ✉️ CONTACT
 
 For support, feedback, business inquiries, or any other questions, please contact:
@@ -206,5 +225,5 @@ For support, feedback, business inquiries, or any other questions, please contac
 <div align="center">
 Made by Daniel Steevin
 <br>
-<a href="LICENSE">Business Source License 1.1</a> — free for personal and internal use.
+Licensed under the <a href="LICENSE">GNU GPL v3 License</a> — Open Source with Copyleft.
 </div>
