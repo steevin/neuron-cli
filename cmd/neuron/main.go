@@ -21,6 +21,9 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"regexp"
+	"runtime"
 	"strings"
 	"time"
 
@@ -36,7 +39,7 @@ import (
 )
 
 // la versión se inyecta al compilar con -ldflags "-X main.version=<tag>".
-var version = "1.1.1"
+var version = "1.2.0"
 
 var rootCmd = &cobra.Command{
 	Use:   "neuron",
@@ -51,22 +54,18 @@ Features:
   • MCP server for seamless AI agent integration (Claude, GPT-4, …)
   • A buttery-smooth Bubble Tea TUI for keyboard-driven browsing
 
-Commands:
-  add <title>              Create a new note (--tag, --template)
-  edit <title|id>          Open a note in your configured editor
-  today                    Open or create today's daily note
-  list                     List notes (-q query, --tag, --limit)
-  rm <title|id>            Delete a note (--force to skip confirmation)
-  stats                    Show vault statistics (note count, tags, words)
-  open                     Open the vault folder in Finder
-  sync                     Sync vault with Git remote (--pull to fetch first)
-  tui                      Open the interactive full-screen TUI
-  mcp                      Start the MCP server for AI agent integration
-  config get <key>         Print a setting (vault_path, editor, theme, git_remote)
-  config set <key> <val>   Update a setting and save it to config.toml
-  version                  Print the build version
-  completion               Generate the autocompletion script for the specified shell
-  init                     Initialize NeuronCLI interactively
+TUI Commands (Press '/' inside the TUI):
+  /copy, /c                Copy the current note to clipboard
+  /attach <path_or_url>    Download or copy image to assets/ and attach to note
+  /links, /l               Open the first URL in the note in your browser
+  /add <title>             Create a new note (skip picker with folder/title)
+  /edit, /e                Edit current note in external editor
+  /rm                      Delete current note
+  /sync, /s                Sync vault with Git remote
+  /today, /t               Open or create today's daily note
+  /theme                   Toggle UI theme (dark/light)
+  /open, /o                Open vault folder in Finder
+  /stats                   Show vault statistics
 
 Update:
   Homebrew   brew upgrade steevin/tap/neuron
@@ -91,10 +90,130 @@ Run 'neuron help <command>' for detailed usage of any subcommand.`,
 	},
 }
 
+var attachCmd = &cobra.Command{
+	Use:   "attach [note ID or title] [path or URL]",
+	Short: "Attach an image or file to a note",
+	Example: `  neuron attach "My Note" /path/to/image.png
+  neuron attach "My Note" https://example.com/image.jpg`,
+	Args:  cobra.ExactArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, _ := config.Load()
+		store, err := notes.NewStore(cfg.VaultPath)
+		if err != nil {
+			return err
+		}
+
+		noteID := args[0]
+		pathOrURL := args[1]
+
+		note, err := store.Get(noteID)
+		if err != nil {
+			return fmt.Errorf("finding note %q: %w", noteID, err)
+		}
+
+		if err := store.AttachAsset(note.ID, pathOrURL); err != nil {
+			return fmt.Errorf("attaching asset: %w", err)
+		}
+
+		fmt.Printf("✅ Attached asset to note %q\n", note.Title)
+		return nil
+	},
+}
+
+var linksCmd = &cobra.Command{
+	Use:   "links [note ID or title]",
+	Short: "Extract and open links or images from a note",
+	Example: `  neuron links "My Note"`,
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, _ := config.Load()
+		store, err := notes.NewStore(cfg.VaultPath)
+		if err != nil {
+			return err
+		}
+
+		note, err := store.Get(args[0])
+		if err != nil {
+			return fmt.Errorf("finding note: %w", err)
+		}
+
+		re := regexp.MustCompile(`(https?://[^\s)\]]+|file://[^\s)\]]+)|\[(.*?)\]\(([^)]+)\)`)
+		matches := re.FindAllStringSubmatch(note.RawContent, -1)
+
+		if len(matches) == 0 {
+			fmt.Println("No links or images found in note.")
+			return nil
+		}
+
+		var options []huh.Option[string]
+		for _, m := range matches {
+			if m[1] != "" {
+				display := m[1]
+				if len(display) > 50 {
+					display = display[:47] + "..."
+				}
+				options = append(options, huh.NewOption(display, m[1]))
+			} else if m[3] != "" {
+				title := m[2]
+				if title == "" {
+					title = filepath.Base(m[3])
+				}
+				options = append(options, huh.NewOption(fmt.Sprintf("%s (%s)", title, m[3]), m[3]))
+			}
+		}
+
+		var selectedLink string
+		err = huh.NewSelect[string]().
+			Title(fmt.Sprintf("Links in %q", note.Title)).
+			Options(options...).
+			Value(&selectedLink).
+			Run()
+		if err != nil {
+			return err
+		}
+
+		target := selectedLink
+		if !strings.HasPrefix(target, "http://") && !strings.HasPrefix(target, "https://") && !strings.HasPrefix(target, "file://") {
+			if strings.HasPrefix(target, "/") {
+				target = filepath.Join(store.VaultPath, strings.TrimPrefix(target, "/"))
+			} else {
+				noteDir := filepath.Dir(note.Path)
+				candidate1 := filepath.Join(noteDir, target)
+				if _, err := os.Stat(candidate1); err == nil {
+					target = candidate1
+				} else {
+					candidate2 := filepath.Join(store.VaultPath, target)
+					if _, err := os.Stat(candidate2); err == nil {
+						target = candidate2
+					} else {
+						// Fallback to what it was
+						target = candidate1
+					}
+				}
+			}
+		}
+
+		fmt.Printf("Opening %s...\n", target)
+		var c *exec.Cmd
+		switch runtime.GOOS {
+		case "darwin":
+			c = exec.Command("open", target)
+		case "windows":
+			c = exec.Command("cmd", "/c", "start", target)
+		default:
+			c = exec.Command("xdg-open", target)
+		}
+		return c.Start()
+	},
+}
+
 var addCmd = &cobra.Command{
 	Use:   "add [title]",
 	Short: "Create a new note",
 	Long:  "Create a new Markdown note in your vault, optionally from clipboard content or a template.",
+	Example: `  neuron add "Meeting Notes"
+  neuron add "Project Plan" --folder "1. Projects"
+  neuron add "Idea" --tag idea --tag work`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		var title string
 		var folder string
@@ -171,6 +290,9 @@ var listCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List notes in your vault",
 	Long:  "List notes in your vault. Supports filtering by tag or full-text/semantic query.",
+	Example: `  neuron list
+  neuron list -q "machine learning"
+  neuron list --tag meeting --limit 5`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, _ := config.Load()
 		store, err := notes.NewStore(cfg.VaultPath)
@@ -258,9 +380,11 @@ func resolveEditor(cfg *config.Config) string {
 
 // editCmd abre una nota en el editor que hayas configurado.
 var editCmd = &cobra.Command{
-	Use:   "edit [id-or-title]",
-	Short: "Open a note in your editor",
-	Long:  "Locate a note by ID or fuzzy title match and open it in the configured editor.",
+	Use:     "edit [id-or-title]",
+	Short:   "Open a note in your editor",
+	Long:    "Locate a note by ID or fuzzy title match and open it in the configured editor.",
+	Example: `  neuron edit "Meeting Notes"
+  neuron edit d8c1b3f`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		var idOrTitle string
 		if len(args) == 0 {
@@ -295,9 +419,11 @@ var editCmd = &cobra.Command{
 
 // rmCmd borra una nota del vault.
 var rmCmd = &cobra.Command{
-	Use:   "rm [id-or-title]",
-	Short: "Delete a note",
-	Long:  "Permanently delete a note from the vault. Requires --force/-f to skip confirmation.",
+	Use:     "rm [id-or-title]",
+	Short:   "Delete a note",
+	Long:    "Permanently delete a note from the vault. Requires --force/-f to skip confirmation.",
+	Example: `  neuron rm "Old Note"
+  neuron rm "Old Note" --force`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		var idOrTitle string
 		if len(args) == 0 {
@@ -485,9 +611,11 @@ var moveCmd = &cobra.Command{
 
 // syncCmd sincroniza el vault con un remoto de Git.
 var syncCmd = &cobra.Command{
-	Use:   "sync",
-	Short: "Sync vault with Git remote",
-	Long:  "Commit any local changes and push to the configured Git remote. Use --pull to fetch first.",
+	Use:     "sync",
+	Short:   "Sync vault with Git remote",
+	Long:    "Commit any local changes and push to the configured Git remote. Use --pull to fetch first.",
+	Example: `  neuron sync
+  neuron sync --pull`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, _ := config.Load()
 		syncer := gitsync.NewSyncer(cfg.VaultPath, cfg.GitRemote)
@@ -698,6 +826,8 @@ func main() {
 	// registramos todos los comandos principales.
 	rootCmd.AddCommand(
 		addCmd,
+		attachCmd,
+		linksCmd,
 		listCmd,
 		editCmd,
 		rmCmd,

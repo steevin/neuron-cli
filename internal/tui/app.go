@@ -21,6 +21,9 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"regexp"
+	"runtime"
 	"strings"
 	"time"
 
@@ -49,6 +52,7 @@ const (
 	focusSearch
 	focusNewNote      // inline note creation mode
 	focusFolderSelect // PARA folder selection after entering a title
+	focusLinkSelect   // Link selection when multiple links are present
 )
 
 // notesLoadedMsg is dispatched when the initial note scan completes.
@@ -112,6 +116,10 @@ type Model struct {
 	pendingBody     string   // body staged while selecting PARA folder
 	paraFolders     []string // detected PARA folders for folder-select mode
 	folderSelectIdx int      // current selection (0 = root, 1..n = PARA folder)
+
+	pendingLinks      []string // URLs/paths for focusLinkSelect
+	pendingLinkTitles []string // Display titles for focusLinkSelect
+	linkSelectIdx     int      // current selection for focusLinkSelect
 	appVersion      string
 }
 
@@ -140,7 +148,7 @@ func (k keyMap) FullHelp() [][]key.Binding {
 
 var keys = keyMap{
 	Tab:    key.NewBinding(key.WithKeys("tab", "shift+tab"), key.WithHelp("tab", "focus")),
-	Search: key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "commands")),
+	Search: key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "cmd palette")),
 	New:    key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "new note")),
 	Paste:  key.NewBinding(key.WithKeys("ctrl+v"), key.WithHelp("ctrl+v", "paste clipboard")),
 	Edit:   key.NewBinding(key.WithKeys("e"), key.WithHelp("e", "edit")),
@@ -152,7 +160,7 @@ var keys = keyMap{
 
 // allPaletteCommands is the full list for fuzzy suggestions.
 var allPaletteCommands = []string{
-	"/add", "/today", "/sync", "/stats", "/open", "/edit", "/rm", "/move", "/theme", "/help", "/quit",
+	"/add", "/today", "/sync", "/stats", "/open", "/edit", "/rm", "/move", "/theme", "/help", "/quit", "/copy", "/attach", "/links",
 }
 
 // New constructs a Model from the provided configuration.
@@ -338,6 +346,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cmd := m.handlePaletteCommand(strings.TrimSpace(msg.Query))
 				if cmd != nil {
 					cmds = append(cmds, cmd)
+				}
+				// Only reset focus to sidebar if the palette command didn't change it
+				// to a specific interactive pane (like focusLinkSelect).
+				if m.focused == focusSearch {
+					m.setFocus(focusSidebar)
 				}
 			}
 			// En ambos casos no filtramos notas por query de paleta.
@@ -564,6 +577,55 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(cmds...)
 		}
 
+		// ── Link-select mode ───────────────────────────────────────────
+		if m.focused == focusLinkSelect {
+			switch {
+			case msg.Type == tea.KeyEnter:
+				if len(m.pendingLinks) > 0 {
+					m.openLink(m.pendingLinks[m.linkSelectIdx])
+				}
+				m.pendingLinks = nil
+				m.pendingLinkTitles = nil
+				m.linkSelectIdx = 0
+				m.setFocus(focusSidebar)
+				return m, tea.Batch(cmds...)
+
+			case msg.Type == tea.KeyEsc:
+				m.pendingLinks = nil
+				m.pendingLinkTitles = nil
+				m.linkSelectIdx = 0
+				m.setFocus(focusSidebar)
+				m.statusMsg = "Cancelled"
+				m.isSuccess = false
+				return m, tea.Batch(cmds...)
+
+			case msg.String() == "left" || msg.String() == "h":
+				if m.linkSelectIdx > 0 {
+					m.linkSelectIdx--
+				}
+				return m, tea.Batch(cmds...)
+
+			case msg.String() == "right" || msg.String() == "l":
+				if m.linkSelectIdx < len(m.pendingLinks)-1 {
+					m.linkSelectIdx++
+				}
+				return m, tea.Batch(cmds...)
+
+			case msg.String() == "up" || msg.String() == "k":
+				if m.linkSelectIdx > 0 {
+					m.linkSelectIdx--
+				}
+				return m, tea.Batch(cmds...)
+
+			case msg.String() == "down" || msg.String() == "j":
+				if m.linkSelectIdx < len(m.pendingLinks)-1 {
+					m.linkSelectIdx++
+				}
+				return m, tea.Batch(cmds...)
+			}
+			return m, tea.Batch(cmds...)
+		}
+
 		// ── Global shortcuts ─────────────────────────────────────────────
 		switch msg.String() {
 		case "ctrl+c", "q":
@@ -598,9 +660,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.focused != focusSearch {
 				m.setFocus(focusSearch)
 				m.search.SetActive(true)
-				// Pre-rellenamos con "/" para entrar en modo paleta de comandos.
-				// El usuario puede borrar el "/" para hacer una búsqueda de texto.
-				m.search.SetQuery("/")
+				// Clear the query. The '/' keypress will be forwarded to the search pane
+				// at the bottom of this Update function, effectively typing the '/' for us.
+				m.search.SetQuery("")
 			}
 
 		case "n":
@@ -900,6 +962,38 @@ func (m Model) renderStatusBar() string {
 			Render("  [← →] navigate · [Enter] confirm · [Esc] cancel")
 		left = promptLabel + "  " + strings.Join(folderChips, " ") + navHint
 
+	case focusLinkSelect:
+		var linkChips []string
+		for i, title := range m.pendingLinkTitles {
+			var chip string
+			if i == m.linkSelectIdx {
+				chip = lipgloss.NewStyle().
+					Foreground(m.theme.Background).
+					Background(m.theme.AccentAlt).
+					Bold(true).
+					Padding(0, 1).
+					Render("▶ " + title)
+			} else {
+				chip = lipgloss.NewStyle().
+					Foreground(m.theme.TextBright).
+					Background(m.theme.Surface2).
+					Padding(0, 1).
+					Render(title)
+			}
+			linkChips = append(linkChips, chip)
+		}
+		promptLabel := lipgloss.NewStyle().
+			Foreground(m.theme.AccentAlt).
+			Background(m.theme.Surface).
+			Bold(true).
+			Padding(0, 1).
+			Render("🔗 Abrir enlace →")
+		navHint := lipgloss.NewStyle().
+			Foreground(m.theme.Muted).
+			Background(m.theme.Surface).
+			Render("  [← →] navigate · [Enter] confirm · [Esc] cancel")
+		left = promptLabel + "  " + strings.Join(linkChips, " ") + navHint
+
 	case focusSearch:
 		query := m.search.Query()
 		if strings.HasPrefix(query, "/") {
@@ -1022,7 +1116,7 @@ func (m *Model) handlePaletteCommand(cmdStr string) tea.Cmd {
 		m.isSuccess = true
 		return m.reloadNotes(targetID)
 
-	case "/add", "/a":
+	case "/add":
 		if len(parts) < 2 {
 			m.statusMsg = "Usage: /add <title>"
 			m.isSuccess = false
@@ -1097,6 +1191,107 @@ func (m *Model) handlePaletteCommand(cmdStr string) tea.Cmd {
 		m.statusMsg = "✓ Deleted: " + note.Title
 		m.isSuccess = true
 		return m.reloadNotes("")
+
+	case "/copy", "/c":
+		note := m.sidebar.SelectedNote()
+		if note == nil {
+			m.statusMsg = "✗ No note selected"
+			m.isSuccess = false
+			return nil
+		}
+		if err := clipboard.WriteAll(note.RawContent); err != nil {
+			m.statusMsg = "✗ Error copying to clipboard: " + err.Error()
+			m.isSuccess = false
+		} else {
+			m.statusMsg = "✓ Note copied to clipboard"
+			m.isSuccess = true
+		}
+		return nil
+
+	case "/attach", "/a":
+		if len(parts) < 2 {
+			m.statusMsg = "Usage: /attach <URL or drag&drop file here> then press Enter"
+			m.isSuccess = false
+			return nil
+		}
+		arg := strings.Join(parts[1:], " ")
+		m.statusMsg = "Attaching asset..."
+		m.isSuccess = false
+		
+		return func() tea.Msg {
+			note := m.sidebar.SelectedNote()
+			if note == nil {
+				return errMsg{err: fmt.Errorf("no note selected")}
+			}
+			
+			err := m.store.AttachAsset(note.ID, arg)
+			if err != nil {
+				return errMsg{err: err}
+			}
+			
+			updatedNote, err := m.store.Get(note.ID)
+			if err != nil {
+				return errMsg{err: err}
+			}
+			// Use pasteNoteMsg to efficiently update the editor view
+			return pasteNoteMsg{note: updatedNote, bytes: len(arg)}
+		}
+
+	case "/links", "/l":
+		note := m.sidebar.SelectedNote()
+		if note == nil {
+			m.statusMsg = "✗ No note selected"
+			m.isSuccess = false
+			return nil
+		}
+		
+		re := regexp.MustCompile(`(https?://[^\s)\]]+|file://[^\s)\]]+)|\[(.*?)\]\(([^)]+)\)`)
+		matches := re.FindAllStringSubmatch(note.RawContent, -1)
+		
+		if len(matches) == 0 {
+			m.statusMsg = "✗ No links found in note"
+			m.isSuccess = false
+			return nil
+		}
+		
+		var links []string
+		var titles []string
+		for _, m := range matches {
+			if m[1] != "" {
+				links = append(links, m[1])
+				// Shorten long URLs for display
+				display := m[1]
+				if len(display) > 30 {
+					display = display[:27] + "..."
+				}
+				titles = append(titles, display)
+			} else if m[3] != "" {
+				links = append(links, m[3])
+				title := m[2]
+				if title == "" {
+					title = filepath.Base(m[3])
+				}
+				titles = append(titles, title)
+			}
+		}
+
+		if len(links) == 0 {
+			m.statusMsg = "✗ No valid links found"
+			m.isSuccess = false
+			return nil
+		}
+
+		if len(links) == 1 {
+			m.openLink(links[0])
+		} else {
+			m.pendingLinks = links
+			m.pendingLinkTitles = titles
+			m.linkSelectIdx = 0
+			m.setFocus(focusLinkSelect)
+			m.statusMsg = fmt.Sprintf("Found %d links. Use arrow keys to select.", len(links))
+			m.isSuccess = true
+		}
+		return nil
 
 	case "/move", "/m":
 		note := m.sidebar.SelectedNote()
@@ -1348,6 +1543,23 @@ func (m *Model) pasteTextToSelectedNote(text string) tea.Cmd {
 // It re-reads the note from disk, appends the text, saves and returns a
 // pasteNoteMsg so the editor can refresh without a full vault reload.
 func appendTextToNote(store *notes.Store, note *notes.Note, text string) tea.Msg {
+	// If the text looks like a file path or URL, try to attach it automatically.
+	cleanPath := strings.TrimSpace(text)
+	cleanPath = strings.Trim(cleanPath, "'\" ")
+	cleanPath = strings.ReplaceAll(cleanPath, "\\ ", " ") // Fix macOS Terminal drag and drop
+
+	// Only try if it's a single line and looks like an absolute path or http url.
+	if !strings.Contains(cleanPath, "\n") {
+		// If it's an existing file or a URL (AttachAsset will handle download for images)
+		if _, err := os.Stat(cleanPath); err == nil || strings.HasPrefix(cleanPath, "http://") || strings.HasPrefix(cleanPath, "https://") {
+			if err := store.AttachAsset(note.ID, cleanPath); err == nil {
+				fresh, _ := store.Get(note.ID)
+				return pasteNoteMsg{note: fresh, bytes: len(text)}
+			}
+			// If AttachAsset failed (e.g. not an image URL), fall through and paste as text
+		}
+	}
+
 	// Re-read from disk to get the freshest content.
 	fresh, err := store.Reload(note)
 	if err != nil {
@@ -1484,8 +1696,8 @@ func (m Model) renderRightColumn(height, width int) string {
 		statsCard = cardStyle.Render(statsContent)
 	}
 
-	// ─── QUICK SHORTCUTS ───
-	quickTitle := statsTitleStyle.Render("QUICK SHORTCUTS")
+	// ─── SHORTCUTS & COMMANDS ───
+	quickTitle := statsTitleStyle.Render("SHORTCUTS & COMMANDS")
 
 	keyStyle := lipgloss.NewStyle().
 		Foreground(theme.Background).
@@ -1510,14 +1722,14 @@ func (m Model) renderRightColumn(height, width int) string {
 	quickRows := []string{
 		renderHint("↑/↓", "Navigate"),
 		renderHint("Enter", "Select/Confirm"),
-		renderHint("/", "Commands"),
 		renderHint("n", "New note"),
-		renderHint("ctrl+v", "Paste clipboard"),
-		renderHint("e", "Edit note"),
-		renderHint("s", "Sync git"),
+		renderHint("ctrl+v", "Paste clip"),
 		renderHint("ctrl+g", "View graph"),
 		renderHint("?", "Help"),
-		renderHint("q", "Quit"),
+		renderHint("/c", "Copy note"),
+		renderHint("/a", "Attach img"),
+		renderHint("/l", "Open links"),
+		renderHint("/s", "Sync git"),
 	}
 
 	quickContent := lipgloss.JoinVertical(lipgloss.Left, append([]string{quickTitle}, quickRows...)...)
@@ -1540,6 +1752,49 @@ func (m Model) renderRightColumn(height, width int) string {
 
 	// Join all right column elements vertically with spacing
 	return lipgloss.JoinVertical(lipgloss.Left, statsCard, quickCard, licenseCard)
+}// openLink resolves the given link and opens it using the OS default application.
+func (m *Model) openLink(link string) {
+	note := m.sidebar.SelectedNote()
+	if note == nil {
+		m.statusMsg = "✗ No note selected"
+		m.isSuccess = false
+		return
+	}
+
+	// Resolve local paths to absolute paths so the OS 'open' command works.
+	if !strings.HasPrefix(link, "http://") && !strings.HasPrefix(link, "https://") && !strings.HasPrefix(link, "file://") {
+		// If it starts with "/", it's an absolute path from the vault root (Obsidian setting).
+		if strings.HasPrefix(link, "/") {
+			link = filepath.Join(m.cfg.VaultPath, strings.TrimPrefix(link, "/"))
+		} else {
+			// It's a relative path. Try resolving relative to the note's directory first.
+			noteDir := filepath.Dir(note.Path)
+			candidate1 := filepath.Join(noteDir, link)
+			if _, err := os.Stat(candidate1); err == nil {
+				link = candidate1
+			} else {
+				// Fallback: Try resolving relative to the vault root
+				candidate2 := filepath.Join(m.cfg.VaultPath, link)
+				if _, err := os.Stat(candidate2); err == nil {
+					link = candidate2
+				}
+			}
+		}
+	}
+	go func() {
+		var cmd *exec.Cmd
+		switch runtime.GOOS {
+		case "darwin":
+			cmd = exec.Command("open", link)
+		case "windows":
+			cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", link)
+		default: // linux, freebsd, etc.
+			cmd = exec.Command("xdg-open", link)
+		}
+		_ = cmd.Run()
+	}()
+	m.statusMsg = "✓ Opened link: " + link
+	m.isSuccess = true
 }
 
 // Run constructs the root model and starts the Bubble Tea program.

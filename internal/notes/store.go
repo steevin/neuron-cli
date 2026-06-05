@@ -17,6 +17,9 @@ package notes
 
 import (
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -478,4 +481,113 @@ func SortNotes(notes []*Note, by string) {
 			return notes[i].Updated.After(notes[j].Updated)
 		})
 	}
+}
+
+// AttachAsset copies a local file or downloads a URL into the "assets/" folder
+// and appends an image/link markdown tag to the note.
+func (s *Store) AttachAsset(noteID string, pathOrURL string) error {
+	note, err := s.Get(noteID)
+	if err != nil {
+		return err
+	}
+
+	assetsDir := filepath.Join(s.VaultPath, "assets")
+	if err := os.MkdirAll(assetsDir, 0o700); err != nil {
+		return fmt.Errorf("notes: creating assets directory: %w", err)
+	}
+
+	var filename string
+	var localDest string
+
+	isURL := strings.HasPrefix(pathOrURL, "http://") || strings.HasPrefix(pathOrURL, "https://")
+
+	if isURL {
+		parsed, err := url.Parse(pathOrURL)
+		if err != nil {
+			return fmt.Errorf("invalid URL: %w", err)
+		}
+		filename = filepath.Base(parsed.Path)
+		if filename == "" || filename == "/" {
+			filename = fmt.Sprintf("download-%d.jpg", time.Now().UnixNano())
+		}
+		
+		// Ensure unique filename
+		localDest = filepath.Join(assetsDir, filename)
+		if _, err := os.Stat(localDest); err == nil {
+			filename = fmt.Sprintf("%d-%s", time.Now().UnixNano(), filename)
+			localDest = filepath.Join(assetsDir, filename)
+		}
+
+		resp, err := http.Get(pathOrURL)
+		if err != nil {
+			return fmt.Errorf("downloading asset: %w", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("bad status: %s", resp.Status)
+		}
+
+		out, err := os.Create(localDest)
+		if err != nil {
+			return fmt.Errorf("creating asset file: %w", err)
+		}
+		defer out.Close()
+
+		_, err = io.Copy(out, resp.Body)
+		if err != nil {
+			return fmt.Errorf("saving asset: %w", err)
+		}
+	} else {
+		// Local file path
+		cleanPath := strings.TrimPrefix(pathOrURL, "file://")
+		
+		// If path has spaces but is passed directly from D&D, it might have quotes or escaped spaces. 
+		cleanPath = strings.Trim(cleanPath, "'\" ")
+		cleanPath = strings.ReplaceAll(cleanPath, "\\ ", " ") // Fix macOS Terminal drag and drop
+		
+		_, err := os.Stat(cleanPath)
+		if err != nil {
+			return fmt.Errorf("local file not found: %w", err)
+		}
+
+		filename = filepath.Base(cleanPath)
+		localDest = filepath.Join(assetsDir, filename)
+		if _, err := os.Stat(localDest); err == nil {
+			filename = fmt.Sprintf("%d-%s", time.Now().UnixNano(), filename)
+			localDest = filepath.Join(assetsDir, filename)
+		}
+
+		in, err := os.Open(cleanPath)
+		if err != nil {
+			return fmt.Errorf("opening local file: %w", err)
+		}
+		defer in.Close()
+
+		out, err := os.Create(localDest)
+		if err != nil {
+			return fmt.Errorf("creating asset file: %w", err)
+		}
+		defer out.Close()
+
+		_, err = io.Copy(out, in)
+		if err != nil {
+			return fmt.Errorf("copying asset: %w", err)
+		}
+	}
+
+	// Append to note
+	ext := strings.ToLower(filepath.Ext(filename))
+	isImage := ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".gif" || ext == ".webp" || ext == ".svg" || ext == ".avif"
+	
+	mdPath := filepath.ToSlash(filepath.Join("assets", filename))
+	var appendText string
+	if isImage {
+		appendText = fmt.Sprintf("\n\n![%s](%s)", filename, mdPath)
+	} else {
+		appendText = fmt.Sprintf("\n\n[%s](%s)", filename, mdPath)
+	}
+
+	note.Content += appendText
+	return s.Update(note)
 }
