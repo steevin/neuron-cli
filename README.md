@@ -1,151 +1,120 @@
 <div align="center">
-
 <img src="docs/assets/logo.png" alt="Neuron CLI Logo" width="200" />
-<br>
-<img src="https://readme-typing-svg.herokuapp.com?font=Fira+Code&weight=800&size=50&pause=1000&color=00D2FF&center=true&vCenter=true&width=600&lines=NEURON+CLI;TERMINAL+KNOWLEDGE;LOCAL+FIRST;AI+READY" alt="Typing SVG" />
+<h1>Neuron CLI</h1>
 
-**A terminal knowledge manager that doesn't get in your way.**
+**Your notes are plain text. Why does managing them have to feel so heavy?**
 
-*If you like Neuron CLI, please consider giving it a ⭐ to help make it more visible!*
-
-[![CI](https://img.shields.io/github/actions/workflow/status/steevin/neuron-cli/ci.yml?style=for-the-badge&color=00d2ff&logo=github)](https://github.com/steevin/neuron-cli/actions)
-[![Go Version](https://img.shields.io/github/go-mod/go-version/steevin/neuron-cli?style=for-the-badge&color=8a2be2&logo=go)](go.mod)
-[![License](https://img.shields.io/badge/license-GPL--3.0-00d2ff?style=for-the-badge)](LICENSE)
-[![Stars](https://img.shields.io/github/stars/steevin/neuron-cli?style=for-the-badge&color=yellow)](https://github.com/steevin/neuron-cli/stargazers)
-[![Go Report Card](https://goreportcard.com/badge/github.com/steevin/neuron-cli?style=for-the-badge)](https://goreportcard.com/report/github.com/steevin/neuron-cli)
-[![Go Reference](https://img.shields.io/badge/pkg.go.dev-reference-00d2ff?logo=go&logoColor=white&style=for-the-badge)](https://pkg.go.dev/github.com/steevin/neuron-cli)
-[![Coverage](https://img.shields.io/codecov/c/github/steevin/neuron-cli?style=for-the-badge&color=8a2be2&logo=codecov)](https://app.codecov.io/gh/steevin/neuron-cli)
-
+*If you like Neuron CLI, please consider giving it a ⭐ on GitHub!*
 </div>
 
 <br>
 
-> **neuron** is a local-first, Obsidian-compatible note manager for the terminal. It keeps your Markdown vault exactly where it is — no migration, no cloud, no subscription. Just fast, keyboard-driven access to your notes from anywhere in a shell.
+> Neuron is a local-first, Obsidian-compatible note manager built for the terminal. It keeps your Markdown vault exactly where it is — no migrations, no proprietary databases, and no cloud subscriptions. Just blistering fast, keyboard-driven access to your thoughts from anywhere in your shell.
 
 ---
 
-### <img src="https://img.shields.io/badge/--8a2be2?style=flat-square" width="10" height="20"> ✨ FEATURES
+### The 10-Second Pitch
 
-#### 🗂️ PARA Methodology — Built In
-neuron understands the **Projects · Areas · Resources · Archive** framework out of the box. It scans your vault for PARA folders and surfaces them throughout the UI:
+If you spend your day in the terminal and keep your notes in plain Markdown, most note-taking apps feel like bloat. They require click-heavy interfaces, run on resource-hungry Electron wrappers, or try to lock your data into a cloud sync subscription.
 
-- **Folder picker on note creation** — After typing a title (`n` in the TUI or `neuron add`), an interactive chip list lets you choose the destination folder before the note is saved. No more notes silently landing at the vault root.
-- **Keyboard navigation**: `← →` / `h l` / `↑ ↓` / `j k` to move between folders, `Enter` to confirm, `Esc` to cancel.
-- **`neuron move`** — Relocate any note to a different PARA folder at any time, from both the CLI and the `/move` TUI command.
-- Vaults without PARA folders skip the picker entirely — zero friction for simple setups.
-
-#### 📂 Live Folder Breadcrumb
-The status bar at the bottom of the TUI permanently shows where the currently highlighted note lives — e.g. `📂 1. Projects` or `📂 2. Areas/Finance` — giving instant spatial context while browsing without opening the note.
-
-#### 📋 Clipboard-to-Note (Paste Workflow)
-- **`ctrl+v`** on a selected note appends your clipboard contents directly to that note on disk — great for capturing web snippets or code blocks without leaving the terminal. If your clipboard contains an image URL or local path, neuron will optionally copy it to an `assets/` folder and attach it.
-- **Bracketed paste** support: paste any amount of text while typing a new note title to pre-fill both the title (first line, up to 40 chars) and the note body in a single gesture.
-
-#### 🔍 Dual Search Engine
-- **BM25 full-text search** — instant keyword search across all notes, available out of the box.
-- **Semantic / AI search** — enable Ollama in your config to get embedding-based similarity search (`neuron list -q "your concept"`).
-
-#### 📝 Template System
-Create note templates and render them on demand:
-
-```bash
-neuron add "2025-06-01 Standup" --template standup
-neuron today                                        # uses a "daily" template automatically
-```
-
-#### 🔗 Wikilinks & Knowledge Graph
-- Full `[[wikilink]]` extraction and index — same format as Obsidian.
-- Press `g` in the TUI to get an instant summary of your knowledge graph: nodes (notes) and edges (links).
-- Inline `#tags` are extracted automatically from note bodies.
-
-#### 💅 Interactive CLI Prompts
-Missing arguments? `neuron` will prompt you interactively for anything it needs — title, folder, confirmation — using rich terminal forms (`huh`).
-
-#### ⚡ Command Palette
-Press `/` in the TUI to fuzzy-search all available commands:
-
-| Command | Description |
-|---------|-------------|
-| `/add <title>` | Create a new note (triggers folder picker) |
-| `/today` | Open or create today's daily note |
-| `/edit`, `/e` | Open the selected note in `$EDITOR` |
-| `/copy`, `/c` | Copy the current note to clipboard |
-| `/attach <path_or_url>`| Download or copy image to assets/ and attach to note |
-| `/links`, `/l` | Open the first URL in the note in your browser |
-| `/move <folder>` | Move the selected note to a PARA folder |
-| `/rm` | Delete the selected note |
-| `/sync`, `/s` | Git push (with optional pull) |
-| `/stats` | Show vault statistics |
-| `/open`, `/o` | Reveal vault in Finder |
-| `/theme dark\|light` | Switch the TUI colour scheme live |
-| `/quit` | Exit neuron |
-
-#### 🎨 Splash Screen & Theming
-- A premium ASCII splash screen greets you on launch with your vault stats and a quick-start keybinding reference.
-- Two built-in themes: **dark** (Tokyo Night) and **light** (GitHub). Switch live with `/theme dark` or persist with `neuron config set theme dark`.
+Neuron is built differently:
+* **Zero Lock-in:** It works directly with your local directory of Markdown files. You can open them in Obsidian, VS Code, or Vim at any time.
+* **Frictionless Speed:** Launch, search, create, and organize notes in milliseconds with optimized keyboard shortcuts.
+* **AI-Ready:** Query your vault using local AI (via Ollama) or expose it to LLM agents using the built-in Model Context Protocol (MCP) server.
 
 ---
 
-### <img src="https://img.shields.io/badge/--00d2ff?style=flat-square" width="10" height="20"> 🚀 INSTALLATION
+### Why Neuron? (Philosophy)
+
+* **Keyboard First:** Your hands should never have to leave the home row. Every action—from searching notes to moving folders and copying code blocks—is a keystroke away.
+* **Privacy by Default:** Your thoughts are yours. Neuron is offline-first. It doesn't track you, upload your notes, or require an account.
+* **Format Freedom:** We believe plain Markdown with standard YAML frontmatter is the gold standard for long-term knowledge retention.
+
+---
+
+### Quick Start
+
+Get up and running in three simple commands:
+
+1. **Install Neuron:**
+   ```bash
+   brew install steevin/tap/neuron
+   ```
+2. **Initialize Your Vault:**
+   ```bash
+   neuron init
+   ```
+   *Point it to an existing Obsidian directory, or create a brand new vault.*
+3. **Launch the TUI:**
+   ```bash
+   neuron
+   ```
+   *Press `?` inside the interface to see all available shortcuts.*
+
+---
+
+### Installation
+
+Detailed options for installing Neuron:
 
 ```bash
-# Homebrew
+# Homebrew (macOS & Linux)
 brew install steevin/tap/neuron
 
-# Binary (curl)
+# Binary via curl
 curl -sSfL https://github.com/steevin/neuron-cli/releases/latest/download/neuron_$(uname -s)_$(uname -m).tar.gz | tar -xz -C /usr/local/bin neuron
 
-# Go
+# Go (requires Go installed)
 go install github.com/steevin/neuron-cli@latest
 
-# Source
+# From Source
 git clone https://github.com/steevin/neuron-cli && cd neuron-cli && make build
 ```
 
 ---
 
-### <img src="https://img.shields.io/badge/--8a2be2?style=flat-square" width="10" height="20"> 💻 USAGE
+### Features
 
+#### PARA Organization
+Neuron understands the **Projects · Areas · Resources · Archive** (PARA) framework out of the box. It scans your vault folders and helps you stay organized without breaking your flow:
+* **Intelligent Folder Picker:** When you create a note (`n` or `neuron add`), an interactive menu prompts you to choose the destination folder. No more notes piling up in your vault's root.
+* **Fluid Navigation:** Move around folders using `← →` / `h l` or `↑ ↓` / `j k`. Press `Enter` to save, `Esc` to cancel.
+* **Quick Moves:** Use `neuron move` or the `/move` TUI command to relocate any note instantly.
+* *Flat vault support:* If you don't use PARA, the folder picker steps aside automatically.
+
+#### Live Folder Context
+The breadcrumb bar at the bottom of the TUI shows you the file's path (e.g., `📂 1. Projects` or `📂 2. Areas/Finance`) as you scroll through your list.
+
+#### Capture Ideas Instantly (Clipboard & Paste)
+* **Instant Appending (`ctrl+v`):** Press `ctrl+v` on any note in the list to append your clipboard content directly to the file on disk. Perfect for clipping web highlights or stack traces.
+* **Smart Asset Management:** If your clipboard contains an image URL or local path, Neuron downloads/copies it into your vault's `assets/` directory and creates a clean Markdown link automatically.
+* **Bracketed Paste:** Paste a block of text when creating a note to automatically set the first line as the title and the rest as the body.
+
+#### Dual Search
+* **BM25 Search:** Standard keyword search that responds as fast as you type.
+* **Semantic / AI Search:** Connect Ollama in your configuration to query your notes by concepts and ideas rather than exact keyword matches (e.g., `neuron list -q "show me things related to my budget"`).
+
+#### Templates for Common Workflows
+Stop typing frontmatter by hand. Define reusable templates and instantiate them on the fly:
 ```bash
-neuron                                   # open the TUI (default)
-neuron init                              # interactive setup wizard (first run)
-neuron add                               # prompt for title + PARA folder picker
-neuron add "standup notes" --tag work    # create note with tag, then pick folder
-neuron add "1. Projects/API redesign"    # skip picker — explicit path prefix
-neuron add "Config" --file nginx.conf --code # create note directly from file
-cat script.py | neuron add "Script" --code python # create note from piped code
-neuron edit "standup notes"             # open in $EDITOR
-neuron today                             # daily note for today
-neuron list -q "kubernetes"              # full-text / semantic search
-neuron move "standup notes" projects    # move note to your Projects folder
-neuron attach "standup notes" ./img.png # attach an image or file to a note
-neuron links "standup notes"             # extract and open links or images
-neuron sync --pull                       # git pull + push
-neuron stats                             # note count, tag count
-neuron config set editor nvim            # change default editor
-neuron config set theme dark             # set colour theme
-neuron mcp                               # start the MCP server
+neuron add "2025-06-01 Standup" --template standup
+neuron today                                        # Auto-generates your daily note using your custom template
 ```
+
+#### Connect Your Thoughts
+* **Obsidian-style Wikilinks:** Full support for `[[wikilink]]` extraction and indexing.
+* **Tags:** Inline `#tags` are automatically indexed and searchable.
+* **Knowledge Summary:** Press `g` in the TUI to see an instant count of notes (nodes) and connections (edges) in your personal knowledge graph.
+
+#### Rich Interactive Prompts
+Forgot a flag? Neuron prompts you with terminal forms powered by `huh` to guide you through note creation, folder picking, and confirmation dialogs.
+
+#### Themes
+Toggle between dark (Tokyo Night) and light (GitHub) color schemes live using `/theme` or lock it in via your configuration.
 
 ---
 
-### <img src="https://img.shields.io/badge/--00d2ff?style=flat-square" width="10" height="20"> 🧠 MCP (AI AGENT ACCESS)
-
-neuron exposes your vault as an [MCP server](https://modelcontextprotocol.io). Add it to any compatible client (Claude Desktop, Cursor, Antigravity…):
-
-```json
-{
-  "mcpServers": {
-    "neuron": { "command": "neuron", "args": ["mcp"] }
-  }
-}
-```
-
-Then you can ask your AI to search, create, summarize, or move notes directly from your vault — without leaving the chat.
-
----
-
-### <img src="https://img.shields.io/badge/--8a2be2?style=flat-square" width="10" height="20"> ⌨️ TUI KEYBINDINGS
+### TUI Keybindings
 
 | Key | Action |
 |-----|--------|
@@ -180,9 +149,72 @@ Then you can ask your AI to search, create, summarize, or move notes directly fr
 
 ---
 
-### <img src="https://img.shields.io/badge/--00d2ff?style=flat-square" width="10" height="20"> 📂 VAULT FORMAT
+### Command Palette
 
-Plain Markdown with YAML frontmatter — identical to Obsidian. Point neuron at an existing Obsidian vault and it just works.
+Fuzzy-search any command in the TUI at any time by pressing `/`:
+
+| Command | Description |
+|---------|-------------|
+| `/add <title>` | Create a new note (triggers folder picker) |
+| `/today` | Open or create today's daily note |
+| `/edit`, `/e` | Open the selected note in `$EDITOR` |
+| `/copy`, `/c` | Copy the current note to clipboard |
+| `/attach <path_or_url>`| Download or copy image to assets/ and attach to note |
+| `/links`, `/l` | Open the first URL in the note in your browser |
+| `/move <folder>` | Move the selected note to a PARA folder |
+| `/rm` | Delete the selected note |
+| `/sync`, `/s` | Git push (with optional pull) |
+| `/stats` | Show vault statistics |
+| `/open`, `/o` | Reveal vault in Finder |
+| `/theme dark\|light` | Switch the TUI colour scheme live |
+| `/quit` | Exit neuron |
+
+---
+
+### CLI Usage
+
+```bash
+neuron                                   # open the TUI (default)
+neuron init                              # interactive setup wizard (first run)
+neuron add                               # prompt for title + PARA folder picker
+neuron add "standup notes" --tag work    # create note with tag, then pick folder
+neuron add "1. Projects/API redesign"    # skip picker — explicit path prefix
+neuron add "Config" --file nginx.conf --code # create note directly from file
+cat script.py | neuron add "Script" --code python # create note from piped code
+neuron edit "standup notes"             # open in $EDITOR
+neuron today                             # daily note for today
+neuron list -q "kubernetes"              # full-text / semantic search
+neuron move "standup notes" projects    # move note to your Projects folder
+neuron attach "standup notes" ./img.png # attach an image or file to a note
+neuron links "standup notes"             # extract and open links or images
+neuron sync --pull                       # git pull + push
+neuron stats                             # note count, tag count
+neuron config set editor nvim            # change default editor
+neuron config set theme dark             # set colour theme
+neuron mcp                               # start the MCP server
+```
+
+---
+
+### MCP (AI Agent Access)
+
+Neuron exposes your vault as a [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server. You can add it to any compatible client (Claude Desktop, Cursor, Antigravity…) to give your AI assistants direct access to your knowledge base:
+
+```json
+{
+  "mcpServers": {
+    "neuron": { "command": "neuron", "args": ["mcp"] }
+  }
+}
+```
+
+Once configured, you can ask your AI to search, create, summarize, or move notes directly from your vault — without leaving the chat.
+
+---
+
+### Vault Format
+
+Neuron uses plain Markdown with YAML frontmatter — identical to Obsidian. Point Neuron at an existing Obsidian vault, and it just works.
 
 ```markdown
 ---
@@ -194,7 +226,7 @@ created: 2025-05-30T09:00:00Z
 Content with [[wikilinks]] and #inline-tags.
 ```
 
-**Recommended PARA structure** (neuron auto-detects any variant):
+**Recommended PARA structure** (Neuron auto-detects any variant):
 
 ```
 vault/
@@ -206,7 +238,9 @@ vault/
 
 ---
 
-### <img src="https://img.shields.io/badge/--8a2be2?style=flat-square" width="10" height="20"> 🔄 UPDATE
+### Updating Neuron
+
+Keep your installation up to date:
 
 ```bash
 # Homebrew
@@ -218,30 +252,30 @@ curl -sSfL https://github.com/steevin/neuron-cli/releases/latest/download/neuron
 
 ---
 
-### <img src="https://img.shields.io/badge/--00d2ff?style=flat-square" width="10" height="20"> ❤️ SUPPORT THIS PROJECT
+### Support
 
-If you find Neuron CLI useful, you can help support the development by donating via PayPal:
+If you find Neuron CLI useful, you can help support its development by donating via PayPal:
 [**Donate via PayPal ➔**](https://paypal.me/steevin)
 
 ---
 
-### <img src="https://img.shields.io/badge/--00d2ff?style=flat-square" width="10" height="20"> 📄 LICENSE & ATTRIBUTION
+### License & Attribution
 
 Neuron CLI is open-source software licensed under the **GNU GPL v3**.
 
-#### ⚖️ What this means
+#### What this means
 * **Copyleft:** Any modifications or derivatives of this code **must** also be open-sourced under the GPL v3.
 * **Keep Copyright:** You must retain all original copyright notices and author info in the source files.
 * **State Changes:** You must prominently state any changes made to the original files.
 
-#### 📢 How to Attribute
+#### How to Attribute
 If you redistribute, fork, or use parts of this codebase in public projects, please show your support and maintain visibility by adding the following attribution to your repository's README or documentation:
 
 > This project uses code/components from [Neuron CLI](https://github.com/steevin/neuron-cli) by [Daniel Steevin](https://github.com/steevin), licensed under the GNU GPL v3.
 
 ---
 
-### <img src="https://img.shields.io/badge/--8a2be2?style=flat-square" width="10" height="20"> ✉️ CONTACT
+### Contact
 
 For support, feedback, business inquiries, or any other questions, please contact:
 [**neuron@steevin.com**](mailto:neuron@steevin.com)
