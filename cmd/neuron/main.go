@@ -39,7 +39,7 @@ import (
 )
 
 // la versión se inyecta al compilar con -ldflags "-X main.version=<tag>".
-var version = "1.2.0"
+var version = "1.2.1"
 
 var rootCmd = &cobra.Command{
 	Use:   "neuron",

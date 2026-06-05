@@ -3,6 +3,7 @@ bin/
 dist/
 neuron-bin
 /neuron
+neuron_cli
 
 # OS specific files
 .DS_Store
@@ -19,3 +20,4 @@ neuron-bin
 
 # Test binary
 *.test
+main_test.go

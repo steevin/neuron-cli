@@ -90,6 +90,7 @@ func NewSidebar(theme *styles.Theme, version string) Sidebar {
 	l.SetShowStatusBar(false)
 	l.SetFilteringEnabled(true)
 	l.SetShowHelp(false)
+	l.DisableQuitKeybindings()
 
 	l.FilterInput.PromptStyle = lipgloss.NewStyle().Foreground(theme.Accent)
 	l.FilterInput.TextStyle = lipgloss.NewStyle().Foreground(theme.Text)
