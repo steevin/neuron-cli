@@ -5,6 +5,8 @@
 **Your notes are plain text. Why does managing them have to feel so heavy?**
 
 *If you like Neuron CLI, please consider giving it a ⭐ on GitHub!*
+
+[English] | [Español](README.es.md)
 </div>
 
 <br>
