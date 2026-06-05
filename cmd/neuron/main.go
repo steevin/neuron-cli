@@ -19,6 +19,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -27,6 +28,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
@@ -39,7 +41,7 @@ import (
 )
 
 // la versión se inyecta al compilar con -ldflags "-X main.version=<tag>".
-var version = "1.2.1"
+var version = "1.2.2"
 
 var rootCmd = &cobra.Command{
 	Use:   "neuron",
@@ -213,7 +215,12 @@ var addCmd = &cobra.Command{
 	Long:  "Create a new Markdown note in your vault, optionally from clipboard content or a template.",
 	Example: `  neuron add "Meeting Notes"
   neuron add "Project Plan" --folder "1. Projects"
-  neuron add "Idea" --tag idea --tag work`,
+  neuron add "Idea" --tag idea --tag work
+  
+  # Capturar código desde un archivo o consola:
+  neuron add "Config" --file nginx.conf --code
+  cat script.py | neuron add "Script" --code python
+  neuron add "Snippet" --from-clipboard --code go`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		var title string
 		var folder string
@@ -258,15 +265,57 @@ var addCmd = &cobra.Command{
 		}
 
 		tags, _ := cmd.Flags().GetStringSlice("tag")
+		fromClipboard, _ := cmd.Flags().GetBool("from-clipboard")
+		fileFlag, _ := cmd.Flags().GetString("file")
+		codeFlag, _ := cmd.Flags().GetString("code")
+		codeFlagSet := cmd.Flags().Changed("code")
+		noEdit, _ := cmd.Flags().GetBool("no-edit")
 
 		templateName, _ := cmd.Flags().GetString("template")
 		content := ""
-		if templateName != "" {
+
+		stat, _ := os.Stdin.Stat()
+		isPiped := (stat.Mode() & os.ModeCharDevice) == 0
+
+		if isPiped {
+			bytes, err := io.ReadAll(os.Stdin)
+			if err == nil {
+				content = string(bytes)
+				noEdit = true // imply no-edit if reading from stdin
+			}
+		} else if fileFlag != "" {
+			bytes, err := os.ReadFile(fileFlag)
+			if err == nil {
+				content = string(bytes)
+				if !codeFlagSet {
+					ext := filepath.Ext(fileFlag)
+					if ext != "" {
+						codeFlag = strings.TrimPrefix(ext, ".")
+						codeFlagSet = true
+					}
+				}
+			} else {
+				return fmt.Errorf("reading file: %v", err)
+			}
+		} else if fromClipboard {
+			text, err := clipboard.ReadAll()
+			if err == nil {
+				content = text
+			}
+		} else if templateName != "" {
 			var renderErr error
 			content, renderErr = store.RenderTemplate(templateName, title)
 			if renderErr != nil {
 				return fmt.Errorf("template error: %v", renderErr)
 			}
+		}
+
+		if codeFlagSet && content != "" {
+			lang := codeFlag
+			if lang == " " || lang == "txt" {
+				lang = ""
+			}
+			content = fmt.Sprintf("```%s\n%s\n```\n", lang, strings.TrimRight(content, "\n"))
 		}
 
 		note, err := store.Create(folder, title, tags, content)
@@ -275,7 +324,6 @@ var addCmd = &cobra.Command{
 		}
 		fmt.Printf("Created %s\n", note.Path)
 
-		noEdit, _ := cmd.Flags().GetBool("no-edit")
 		if !noEdit {
 			c := exec.Command(resolveEditor(cfg), note.Path)
 			c.Stdin, c.Stdout, c.Stderr = os.Stdin, os.Stdout, os.Stderr
@@ -798,6 +846,9 @@ var anllyCmd = &cobra.Command{
 func init() {
 	// flags de addCmd
 	addCmd.Flags().Bool("from-clipboard", false, "Populate note body from clipboard contents")
+	addCmd.Flags().String("file", "", "Create note from file contents")
+	addCmd.Flags().String("code", "", "Wrap content in a markdown code block (optional: specify language)")
+	addCmd.Flags().Lookup("code").NoOptDefVal = "txt"
 	addCmd.Flags().StringSlice("tag", nil, "Tags to apply to the new note (repeatable)")
 	addCmd.Flags().String("template", "", "Name of the note template to use")
 	addCmd.Flags().String("folder", "", "Folder in the vault to save the note in (e.g. '1. Projects')")

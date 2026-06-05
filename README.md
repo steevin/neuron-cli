@@ -112,6 +112,8 @@ neuron init                              # interactive setup wizard (first run)
 neuron add                               # prompt for title + PARA folder picker
 neuron add "standup notes" --tag work    # create note with tag, then pick folder
 neuron add "1. Projects/API redesign"    # skip picker — explicit path prefix
+neuron add "Config" --file nginx.conf --code # create note directly from file
+cat script.py | neuron add "Script" --code python # create note from piped code
 neuron edit "standup notes"             # open in $EDITOR
 neuron today                             # daily note for today
 neuron list -q "kubernetes"              # full-text / semantic search
@@ -153,6 +155,7 @@ Then you can ask your AI to search, create, summarize, or move notes directly fr
 | `n` | New note (triggers PARA folder picker) |
 | `e` | Edit selected note in `$EDITOR` |
 | `ctrl+v` | Paste clipboard into selected note |
+| `c` / `y` | Copy/yank code blocks from the selected note |
 | `/` | Command palette (fuzzy search) |
 | `s` | Git sync |
 | `ctrl+g` | Knowledge graph summary |
@@ -165,6 +168,14 @@ Then you can ask your AI to search, create, summarize, or move notes directly fr
 |-----|--------|
 | `← → / h l / ↑ ↓ / j k` | Navigate folder chips |
 | `Enter` | Confirm folder |
+| `Esc` | Cancel |
+
+**During code block extraction (`💻 COPY CODE` mode)**
+
+| Key | Action |
+|-----|--------|
+| `← → / h l / ↑ ↓ / j k` | Navigate code blocks |
+| `Enter` | Copy selected code block to clipboard |
 | `Esc` | Cancel |
 
 ---

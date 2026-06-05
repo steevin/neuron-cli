@@ -53,7 +53,14 @@ const (
 	focusNewNote      // inline note creation mode
 	focusFolderSelect // PARA folder selection after entering a title
 	focusLinkSelect   // Link selection when multiple links are present
+	focusCodeSelect   // Code block selection
 )
+
+// codeBlocksExtractedMsg is dispatched when code blocks are extracted from a note.
+type codeBlocksExtractedMsg struct {
+	blocks []string
+	titles []string
+}
 
 // notesLoadedMsg is dispatched when the initial note scan completes.
 type notesLoadedMsg struct {
@@ -120,6 +127,11 @@ type Model struct {
 	pendingLinks      []string // URLs/paths for focusLinkSelect
 	pendingLinkTitles []string // Display titles for focusLinkSelect
 	linkSelectIdx     int      // current selection for focusLinkSelect
+
+	pendingCodeBlocks []string // Extracted code blocks
+	pendingCodeTitles []string // Display titles for focusCodeSelect
+	codeSelectIdx     int      // current selection for focusCodeSelect
+
 	appVersion      string
 }
 
@@ -322,6 +334,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			cmds = append(cmds, m.reloadNotes(msg.noteID))
 		}
+
+	case codeBlocksExtractedMsg:
+		m.pendingCodeBlocks = msg.blocks
+		m.pendingCodeTitles = msg.titles
+		m.codeSelectIdx = 0
+		m.setFocus(focusCodeSelect)
 
 	case pasteNoteMsg:
 		// Update the note in-place in allNotes so the sidebar reflects the change.
@@ -626,6 +644,62 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(cmds...)
 		}
 
+		// ── Code-select mode ───────────────────────────────────────────
+		if m.focused == focusCodeSelect {
+			switch {
+			case msg.Type == tea.KeyEnter:
+				if len(m.pendingCodeBlocks) > 0 {
+					code := m.pendingCodeBlocks[m.codeSelectIdx]
+					if err := clipboard.WriteAll(code); err == nil {
+						m.statusMsg = "✓ 📋 Copied code block to clipboard"
+						m.isSuccess = true
+					} else {
+						m.statusMsg = "✗ Failed to copy to clipboard"
+						m.isSuccess = false
+					}
+				}
+				m.pendingCodeBlocks = nil
+				m.pendingCodeTitles = nil
+				m.codeSelectIdx = 0
+				m.setFocus(focusSidebar)
+				return m, tea.Batch(cmds...)
+
+			case msg.Type == tea.KeyEsc:
+				m.pendingCodeBlocks = nil
+				m.pendingCodeTitles = nil
+				m.codeSelectIdx = 0
+				m.setFocus(focusSidebar)
+				m.statusMsg = "Cancelled"
+				m.isSuccess = false
+				return m, tea.Batch(cmds...)
+
+			case msg.String() == "left" || msg.String() == "h":
+				if m.codeSelectIdx > 0 {
+					m.codeSelectIdx--
+				}
+				return m, tea.Batch(cmds...)
+
+			case msg.String() == "right" || msg.String() == "l":
+				if m.codeSelectIdx < len(m.pendingCodeBlocks)-1 {
+					m.codeSelectIdx++
+				}
+				return m, tea.Batch(cmds...)
+
+			case msg.String() == "up" || msg.String() == "k":
+				if m.codeSelectIdx > 0 {
+					m.codeSelectIdx--
+				}
+				return m, tea.Batch(cmds...)
+
+			case msg.String() == "down" || msg.String() == "j":
+				if m.codeSelectIdx < len(m.pendingCodeBlocks)-1 {
+					m.codeSelectIdx++
+				}
+				return m, tea.Batch(cmds...)
+			}
+			return m, tea.Batch(cmds...)
+		}
+
 		// ── Global shortcuts ─────────────────────────────────────────────
 		switch msg.String() {
 		case "ctrl+c", "q":
@@ -636,6 +710,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "?":
 			if m.focused != focusSearch {
 				m.showHelp = !m.showHelp
+			}
+
+		case "c", "y":
+			if m.focused != focusSearch && m.focused != focusNewNote {
+				if selected := m.sidebar.SelectedNote(); selected != nil {
+					cmds = append(cmds, m.extractCodeBlocks(selected))
+				}
 			}
 
 		case "tab":
@@ -856,6 +937,11 @@ func (m Model) renderTitleBar() string {
 			Background(m.theme.AccentAlt).
 			Foreground(m.theme.Background).
 			Render(" 📁 SAVE TO ")
+	case focusCodeSelect:
+		modeLabel = m.theme.ModeIndicator.
+			Background(m.theme.AccentAlt).
+			Foreground(m.theme.Background).
+			Render(" 💻 COPY CODE ")
 	}
 
 	leftStyle := m.theme.AppName.Background(m.theme.Surface)
@@ -993,6 +1079,38 @@ func (m Model) renderStatusBar() string {
 			Background(m.theme.Surface).
 			Render("  [← →] navigate · [Enter] confirm · [Esc] cancel")
 		left = promptLabel + "  " + strings.Join(linkChips, " ") + navHint
+
+	case focusCodeSelect:
+		var codeChips []string
+		for i, title := range m.pendingCodeTitles {
+			var chip string
+			if i == m.codeSelectIdx {
+				chip = lipgloss.NewStyle().
+					Foreground(m.theme.Background).
+					Background(m.theme.AccentAlt).
+					Bold(true).
+					Padding(0, 1).
+					Render("▶ " + title)
+			} else {
+				chip = lipgloss.NewStyle().
+					Foreground(m.theme.TextBright).
+					Background(m.theme.Surface2).
+					Padding(0, 1).
+					Render(title)
+			}
+			codeChips = append(codeChips, chip)
+		}
+		promptLabel := lipgloss.NewStyle().
+			Foreground(m.theme.AccentAlt).
+			Background(m.theme.Surface).
+			Bold(true).
+			Padding(0, 1).
+			Render("💻 Copiar código →")
+		navHint := lipgloss.NewStyle().
+			Foreground(m.theme.Muted).
+			Background(m.theme.Surface).
+			Render("  [← →] navigate · [Enter] copy · [Esc] cancel")
+		left = promptLabel + "  " + strings.Join(codeChips, " ") + navHint
 
 	case focusSearch:
 		query := m.search.Query()
@@ -1795,6 +1913,44 @@ func (m *Model) openLink(link string) {
 	}()
 	m.statusMsg = "✓ Opened link: " + link
 	m.isSuccess = true
+}
+
+func (m *Model) extractCodeBlocks(note *notes.Note) tea.Cmd {
+	return func() tea.Msg {
+		// regex to find all ``` language \n code ``` blocks
+		re := regexp.MustCompile("(?s)```([a-zA-Z0-9_+-]*)\\n(.*?)```")
+		matches := re.FindAllStringSubmatch(note.RawContent, -1)
+		
+		if len(matches) == 0 {
+			return statusMsg{msg: "✗ No code blocks found in note"}
+		}
+		
+		if len(matches) == 1 {
+			code := strings.TrimSpace(matches[0][2])
+			if err := clipboard.WriteAll(code); err != nil {
+				return errMsg{err: err}
+			}
+			return successMsg{msg: "📋 Copied code block to clipboard"}
+		}
+		
+		var blocks []string
+		var titles []string
+		for _, m := range matches {
+			lang := m[1]
+			code := strings.TrimSpace(m[2])
+			blocks = append(blocks, code)
+			
+			preview := strings.ReplaceAll(code, "\n", " ")
+			if len([]rune(preview)) > 30 {
+				preview = string([]rune(preview)[:30]) + "…"
+			}
+			if lang == "" {
+				lang = "txt"
+			}
+			titles = append(titles, fmt.Sprintf("[%s] %s", lang, preview))
+		}
+		return codeBlocksExtractedMsg{blocks: blocks, titles: titles}
+	}
 }
 
 // Run constructs the root model and starts the Bubble Tea program.
