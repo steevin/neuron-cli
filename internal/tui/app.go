@@ -330,18 +330,31 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case panes.SearchQueryMsg:
 		if strings.HasPrefix(msg.Query, "/") {
-			m.setFocus(focusSidebar)
-			cmd := m.handlePaletteCommand(strings.TrimSpace(msg.Query))
-			if cmd != nil {
-				cmds = append(cmds, cmd)
+			// Solo ejecutar el comando de paleta cuando Live=false (Enter).
+			// Cuando Live=true el usuario sigue escribiendo: solo actualizamos
+			// las sugerencias de la paleta sin ejecutar nada.
+			if !msg.Live {
+				m.search.SetQuery("")
+				cmd := m.handlePaletteCommand(strings.TrimSpace(msg.Query))
+				if cmd != nil {
+					cmds = append(cmds, cmd)
+				}
 			}
+			// En ambos casos no filtramos notas por query de paleta.
 			return m, tea.Batch(cmds...)
 		}
+		// Query de texto normal.
 		m = m.filterNotes(msg.Query)
-		m.setFocus(focusSidebar)
+		if !msg.Live {
+			// El usuario confirmó con Enter → mover foco al sidebar para
+			// que pueda navegar los resultados con ↑ ↓ / j k.
+			m.setFocus(focusSidebar)
+		}
+		// Si Live=true el foco permanece en el buscador para seguir escribiendo.
 
 	case panes.SearchClearMsg:
 		m.sidebar.SetNotes(m.allNotes)
+		m.search.SetQuery("")
 		m.setFocus(focusSidebar)
 
 	case tea.KeyMsg:
@@ -585,6 +598,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.focused != focusSearch {
 				m.setFocus(focusSearch)
 				m.search.SetActive(true)
+				// Pre-rellenamos con "/" para entrar en modo paleta de comandos.
+				// El usuario puede borrar el "/" para hacer una búsqueda de texto.
 				m.search.SetQuery("/")
 			}
 

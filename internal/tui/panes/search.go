@@ -23,8 +23,13 @@ import (
 	"github.com/steevin/neuron-cli/internal/tui/styles"
 )
 
-// SearchQueryMsg is emitted when the user presses Enter in the search bar.
-type SearchQueryMsg struct{ Query string }
+// SearchQueryMsg is emitted when the user types (Live=true) or presses Enter (Live=false).
+// When Live is false the app should move focus to the sidebar so the user can
+// navigate the filtered results with arrow keys.
+type SearchQueryMsg struct {
+	Query string
+	Live  bool // true = real-time update while typing; false = confirmed with Enter
+}
 
 // SearchClearMsg is emitted when the user presses Escape; restores the full list.
 type SearchClearMsg struct{}
@@ -66,9 +71,11 @@ func (s SearchPane) Update(msg tea.Msg) (SearchPane, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.Type {
 		case tea.KeyEnter:
+			// Live=false: el usuario confirmó — mover el foco al sidebar
+			// para que pueda navegar los resultados con ↑ ↓.
 			query := s.input.Value()
 			return s, func() tea.Msg {
-				return SearchQueryMsg{Query: query}
+				return SearchQueryMsg{Query: query, Live: false}
 			}
 
 		case tea.KeyEsc:
@@ -82,7 +89,19 @@ func (s SearchPane) Update(msg tea.Msg) (SearchPane, tea.Cmd) {
 	}
 
 	var cmd tea.Cmd
+	prevVal := s.input.Value()
 	s.input, cmd = s.input.Update(msg)
+
+	// Live=true: filtrar en tiempo real mientras el usuario escribe.
+	// El foco permanece en el buscador hasta que confirme con Enter.
+	if newVal := s.input.Value(); newVal != prevVal {
+		query := newVal
+		liveCmd := func() tea.Msg {
+			return SearchQueryMsg{Query: query, Live: true}
+		}
+		return s, tea.Batch(cmd, liveCmd)
+	}
+
 	return s, cmd
 }
 
@@ -94,7 +113,11 @@ func (s SearchPane) View() string {
 		inputStyle := lipgloss.NewStyle().
 			Foreground(s.theme.Text).
 			Background(s.theme.Surface)
-		return containerStyle.Render(inputStyle.Render(s.input.View()))
+		hintStyle := lipgloss.NewStyle().
+			Foreground(s.theme.Muted).
+			Background(s.theme.Surface)
+		hint := hintStyle.Render("  [Enter] navegar resultados · [Esc] cancelar")
+		return containerStyle.Render(inputStyle.Render(s.input.View()) + hint)
 	}
 
 	hintStyle := lipgloss.NewStyle().
