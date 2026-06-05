@@ -38,7 +38,7 @@ neuron understands the **Projects · Areas · Resources · Archive** framework o
 The status bar at the bottom of the TUI permanently shows where the currently highlighted note lives — e.g. `📂 1. Projects` or `📂 2. Areas/Finance` — giving instant spatial context while browsing without opening the note.
 
 #### 📋 Clipboard-to-Note (Paste Workflow)
-- **`ctrl+v`** on a selected note appends your clipboard contents directly to that note on disk — great for capturing web snippets or code blocks without leaving the terminal.
+- **`ctrl+v`** on a selected note appends your clipboard contents directly to that note on disk — great for capturing web snippets or code blocks without leaving the terminal. If your clipboard contains an image URL or local path, neuron will optionally copy it to an `assets/` folder and attach it.
 - **Bracketed paste** support: paste any amount of text while typing a new note title to pre-fill both the title (first line, up to 40 chars) and the note body in a single gesture.
 
 #### 🔍 Dual Search Engine
@@ -68,12 +68,15 @@ Press `/` in the TUI to fuzzy-search all available commands:
 |---------|-------------|
 | `/add <title>` | Create a new note (triggers folder picker) |
 | `/today` | Open or create today's daily note |
-| `/edit` | Open the selected note in `$EDITOR` |
+| `/edit`, `/e` | Open the selected note in `$EDITOR` |
+| `/copy`, `/c` | Copy the current note to clipboard |
+| `/attach <path_or_url>`| Download or copy image to assets/ and attach to note |
+| `/links`, `/l` | Open the first URL in the note in your browser |
 | `/move <folder>` | Move the selected note to a PARA folder |
 | `/rm` | Delete the selected note |
-| `/sync` | Git push (with optional pull) |
+| `/sync`, `/s` | Git push (with optional pull) |
 | `/stats` | Show vault statistics |
-| `/open` | Reveal vault in Finder |
+| `/open`, `/o` | Reveal vault in Finder |
 | `/theme dark\|light` | Switch the TUI colour scheme live |
 | `/quit` | Exit neuron |
 
@@ -88,6 +91,9 @@ Press `/` in the TUI to fuzzy-search all available commands:
 ```bash
 # Homebrew
 brew install steevin/tap/neuron
+
+# Binary (curl)
+curl -sSfL https://github.com/steevin/neuron-cli/releases/latest/download/neuron_$(uname -s)_$(uname -m).tar.gz | tar -xz -C /usr/local/bin neuron
 
 # Go
 go install github.com/steevin/neuron-cli@latest
@@ -110,6 +116,8 @@ neuron edit "standup notes"             # open in $EDITOR
 neuron today                             # daily note for today
 neuron list -q "kubernetes"              # full-text / semantic search
 neuron move "standup notes" projects    # move note to your Projects folder
+neuron attach "standup notes" ./img.png # attach an image or file to a note
+neuron links "standup notes"             # extract and open links or images
 neuron sync --pull                       # git pull + push
 neuron stats                             # note count, tag count
 neuron config set editor nvim            # change default editor
@@ -190,7 +198,11 @@ vault/
 ### <img src="https://img.shields.io/badge/--8a2be2?style=flat-square" width="10" height="20"> 🔄 UPDATE
 
 ```bash
+# Homebrew
 brew upgrade steevin/tap/neuron
+
+# Binary (curl)
+curl -sSfL https://github.com/steevin/neuron-cli/releases/latest/download/neuron_$(uname -s)_$(uname -m).tar.gz | tar -xz -C /usr/local/bin neuron
 ```
 
 ---
