@@ -95,6 +95,9 @@ type pasteNoteMsg struct {
 	bytes int
 }
 
+// vaultChangedMsg is dispatched when the vault watcher detects external changes.
+type vaultChangedMsg struct{}
+
 // Model is the root Bubble Tea model. It owns all child pane models and
 // orchestrates focus, layout, and data flow.
 type Model struct {
@@ -227,7 +230,7 @@ func New(cfg *config.Config, appVersion string) (*Model, error) {
 // instead of being fed character by character to the active input.
 func (m Model) Init() tea.Cmd {
 	return tea.Batch(
-		tea.EnableBracketedPaste, // enables paste → KeyMsg{Paste:true}
+		tea.EnableBracketedPaste,
 		m.spinner.Tick,
 		func() tea.Msg {
 			noteList, err := m.store.List(notes.ListOptions{})
@@ -236,7 +239,17 @@ func (m Model) Init() tea.Cmd {
 			}
 			return notesLoadedMsg{notes: noteList, selectedNoteID: ""}
 		},
+		m.watchVault(),
 	)
+}
+
+// watchVault returns a command that periodically checks the vault for external
+// changes (e.g. notes created or modified outside the TUI) and fires a
+// vaultChangedMsg on every tick. The handler gatekeeps on IsCacheStale.
+func (m Model) watchVault() tea.Cmd {
+	return tea.Tick(3*time.Second, func(t time.Time) tea.Msg {
+		return vaultChangedMsg{}
+	})
 }
 
 // Update is the Bubble Tea message handler.
@@ -353,6 +366,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.editor.SetNote(msg.note)
 		m.statusMsg = fmt.Sprintf("✓ 📋 %s pasted in «%s»", formatBytes(msg.bytes), msg.note.Title)
 		m.isSuccess = true
+
+	case vaultChangedMsg:
+		cmds = append(cmds, m.watchVault())
+		if !m.store.IsCacheStale() {
+			return m, tea.Batch(cmds...)
+		}
+		selectedID := ""
+		if sel := m.sidebar.SelectedNote(); sel != nil {
+			selectedID = sel.ID
+		}
+		m.store.InvalidateCache()
+		cmds = append(cmds, m.reloadNotes(selectedID))
 
 	case panes.SearchQueryMsg:
 		if strings.HasPrefix(msg.Query, "/") {

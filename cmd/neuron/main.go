@@ -41,7 +41,7 @@ import (
 )
 
 // la versión se inyecta al compilar con -ldflags "-X main.version=<tag>".
-var version = "1.2.2"
+var version = "1.3.0"
 
 var rootCmd = &cobra.Command{
 	Use:   "neuron",
@@ -353,13 +353,11 @@ var listCmd = &cobra.Command{
 
 		if query != "" {
 			if cfg.AI.Enabled {
-				// buscamos por semántica (IA)
-				idx, err := search.NewSemanticIndex(cfg)
+				idx, err := search.NewSemanticIndex(cfg, store.EmbedDir())
 				if err != nil {
 					return fmt.Errorf("semantic search setup failed: %v", err)
 				}
 				noteList, _ := store.List(notes.ListOptions{})
-				// TODO: cachear el índice para no reconstruirlo al vuelo (aunque es súper rápido en vaults pequeños).
 				fmt.Println("Generating embeddings...")
 				_ = idx.Rebuild(cmd.Context(), noteList)
 				res, err := idx.Search(cmd.Context(), query, limit)
@@ -374,9 +372,11 @@ var listCmd = &cobra.Command{
 				return nil
 			} else {
 				// búsqueda por palabras (BM25)
-				idx := search.NewIndex()
 				noteList, _ := store.List(notes.ListOptions{})
-				idx.Rebuild(noteList)
+				idx, err := search.RebuildWithCache(store.CacheDir(), noteList)
+				if err != nil {
+					return fmt.Errorf("search setup failed: %v", err)
+				}
 				res := idx.Search(query, limit)
 				titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#e6edf3"))
 				for _, r := range res {
@@ -707,10 +707,12 @@ to AI agents such as Claude Desktop, Cursor, or any MCP-compatible client.`,
 			return fmt.Errorf("failed to load vault: %v", err)
 		}
 
-		// construimos el índice
-		idx := search.NewIndex()
+		// construimos el índice con persistencia
 		noteList, _ := store.List(notes.ListOptions{})
-		idx.Rebuild(noteList)
+		idx, err := search.RebuildWithCache(store.CacheDir(), noteList)
+		if err != nil {
+			return fmt.Errorf("failed to build search index: %v", err)
+		}
 
 		srv, err := mcp.NewServer(cfg, store, idx)
 		if err != nil {

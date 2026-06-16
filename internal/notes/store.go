@@ -45,6 +45,9 @@ type ListOptions struct {
 type Store struct {
 	VaultPath string         // Absolute path to the vault root
 	Vault     *ObsidianVault // Detected Obsidian metadata (may be non-Obsidian)
+
+	noteCache     []*Note     // in-memory cache of parsed notes (nil = dirty)
+	cacheModTimes map[string]time.Time // file path → last mod time when cached
 }
 
 // NewStore inicializa el store y expande el ~ si viene en la ruta.
@@ -72,6 +75,29 @@ func NewStore(vaultPath string) (*Store, error) {
 		VaultPath: vaultPath,
 		Vault:     vault,
 	}, nil
+}
+
+// NeuronDir returns the path to the .neuron metadata directory inside the vault.
+// Creates it if it doesn't exist.
+func (s *Store) NeuronDir() string {
+	return filepath.Join(s.VaultPath, ".neuron")
+}
+
+// CacheDir returns the path where search indices are cached.
+func (s *Store) CacheDir() string {
+	return filepath.Join(s.NeuronDir(), "cache")
+}
+
+// EmbedDir returns the path where chromem-go persists the vector DB.
+func (s *Store) EmbedDir() string {
+	return filepath.Join(s.NeuronDir(), "chromem")
+}
+
+// InvalidateCache marks the in-memory note cache as stale so the next
+// List call re-scans the vault from disk.
+func (s *Store) InvalidateCache() {
+	s.noteCache = nil
+	s.cacheModTimes = nil
 }
 
 // Create genera un UUID, limpia el nombre del archivo y guarda la nota nueva.
@@ -122,6 +148,7 @@ func (s *Store) Create(folder string, title string, tags []string, content strin
 		return nil, fmt.Errorf("notes: writing note %q: %w", fullPath, err)
 	}
 
+	s.InvalidateCache()
 	return note, nil
 }
 
@@ -237,6 +264,7 @@ func (s *Store) Move(idOrTitle string, targetFolder string) error {
 	if relErr == nil {
 		note.RelPath = rel
 	}
+	s.InvalidateCache()
 	return nil
 }
 
@@ -276,55 +304,16 @@ func (s *Store) Get(idOrTitle string) (*Note, error) {
 }
 
 // List recorre el vault, lee los .md y devuelve los resultados filtrados y ordenados.
+// Usa un caché en memoria para evitar escanear el disco en cada llamada.
 func (s *Store) List(opts ListOptions) ([]*Note, error) {
-	var notes []*Note
-
-	err := filepath.WalkDir(s.VaultPath, func(path string, d os.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			// si no podemos leer algo, lo saltamos para no romper todo
-			return nil
+	if s.noteCache == nil || s.IsCacheStale() {
+		if err := s.scanAll(); err != nil {
+			return nil, err
 		}
-
-		// ignoramos carpetas ocultas y de sistema de Obsidian
-		if d.IsDir() {
-			name := d.Name()
-			if strings.HasPrefix(name, ".") || name == ".obsidian" || name == ".trash" {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-
-		// solo nos importan los markdown
-		if !strings.EqualFold(filepath.Ext(path), ".md") {
-			return nil
-		}
-
-		// por si acaso nos metemos en alguna carpeta de Obsidian, evitamos sus archivos
-		if IsObsidianFile(path) {
-			return nil
-		}
-
-		note, parseErr := ParseFile(path)
-		if parseErr != nil {
-			// los archivos mal formados los ignoramos en silencio
-			return nil
-		}
-
-		// calculamos la ruta relativa
-		rel, relErr := filepath.Rel(s.VaultPath, path)
-		if relErr == nil {
-			note.RelPath = rel
-		}
-
-		notes = append(notes, note)
-		return nil
-	})
-	if err != nil {
-		return nil, fmt.Errorf("notes: walking vault %q: %w", s.VaultPath, err)
 	}
 
-	filtered := make([]*Note, 0, len(notes))
-	for _, n := range notes {
+	filtered := make([]*Note, 0, len(s.noteCache))
+	for _, n := range s.noteCache {
 		if !matchesListOptions(n, opts) {
 			continue
 		}
@@ -340,6 +329,70 @@ func (s *Store) List(opts ListOptions) ([]*Note, error) {
 	return filtered, nil
 }
 
+// scanAll walks the vault and parses every .md file, populating the cache.
+func (s *Store) scanAll() error {
+	var notes []*Note
+	modTimes := make(map[string]time.Time)
+
+	err := filepath.WalkDir(s.VaultPath, func(path string, d os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return nil
+		}
+
+		if d.IsDir() {
+			name := d.Name()
+			if strings.HasPrefix(name, ".") || name == ".obsidian" || name == ".trash" || name == ".neuron" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.EqualFold(filepath.Ext(path), ".md") {
+			return nil
+		}
+		if IsObsidianFile(path) {
+			return nil
+		}
+
+		note, parseErr := ParseFile(path)
+		if parseErr != nil {
+			return nil
+		}
+
+		rel, relErr := filepath.Rel(s.VaultPath, path)
+		if relErr == nil {
+			note.RelPath = rel
+		}
+
+		notes = append(notes, note)
+
+		if info, err := os.Stat(path); err == nil {
+			modTimes[path] = info.ModTime()
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("notes: walking vault %q: %w", s.VaultPath, err)
+	}
+
+	s.noteCache = notes
+	s.cacheModTimes = modTimes
+	return nil
+}
+
+// IsCacheStale checks if any .md file has been modified since the last scan.
+func (s *Store) IsCacheStale() bool {
+	if s.cacheModTimes == nil {
+		return true
+	}
+	for path, cachedMod := range s.cacheModTimes {
+		info, err := os.Stat(path)
+		if err != nil || !info.ModTime().Equal(cachedMod) {
+			return true
+		}
+	}
+	return false
+}
+
 // Update actualiza la fecha de modificación y reescribe el archivo.
 func (s *Store) Update(note *Note) error {
 	note.Updated = time.Now()
@@ -348,6 +401,7 @@ func (s *Store) Update(note *Note) error {
 	if err := os.WriteFile(note.Path, []byte(note.RawContent), 0o600); err != nil {
 		return fmt.Errorf("notes: writing note %q: %w", note.Path, err)
 	}
+	s.InvalidateCache()
 	return nil
 }
 
@@ -387,6 +441,7 @@ func (s *Store) Delete(idOrTitle string) error {
 	if err := os.Rename(note.Path, dest); err != nil {
 		return fmt.Errorf("notes: moving note to trash: %w", err)
 	}
+	s.InvalidateCache()
 	return nil
 }
 

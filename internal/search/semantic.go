@@ -18,6 +18,7 @@ package search
 import (
 	"context"
 	"fmt"
+	"os"
 	"runtime"
 	"strings"
 
@@ -28,13 +29,15 @@ import (
 
 // SemanticIndex provides vector-based semantic search over notes using local embeddings.
 type SemanticIndex struct {
-	db   *chromem.DB
-	coll *chromem.Collection
-	docs map[string]*notes.Note
+	db        *chromem.DB
+	coll      *chromem.Collection
+	docs      map[string]*notes.Note
+	embedDir  string
 }
 
 // NewSemanticIndex initializes a new semantic index using the provided AI configuration.
-func NewSemanticIndex(cfg *config.Config) (*SemanticIndex, error) {
+// If embedDir is non-empty, the vector database is persisted to that directory.
+func NewSemanticIndex(cfg *config.Config, embedDir string) (*SemanticIndex, error) {
 	if !cfg.AI.Enabled {
 		return nil, fmt.Errorf("AI features are disabled in config")
 	}
@@ -48,16 +51,30 @@ func NewSemanticIndex(cfg *config.Config) (*SemanticIndex, error) {
 		return nil, fmt.Errorf("unsupported AI provider: %s", cfg.AI.Provider)
 	}
 
-	db := chromem.NewDB()
+	var db *chromem.DB
+	if embedDir != "" {
+		if err := os.MkdirAll(embedDir, 0o700); err != nil {
+			return nil, fmt.Errorf("creating embed dir: %w", err)
+		}
+		var err error
+		db, err = chromem.NewPersistentDB(embedDir, true)
+		if err != nil {
+			return nil, fmt.Errorf("creating persistent DB: %w", err)
+		}
+	} else {
+		db = chromem.NewDB()
+	}
+
 	coll, err := db.GetOrCreateCollection("notes", nil, embedFunc)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create collection: %w", err)
 	}
 
 	return &SemanticIndex{
-		db:   db,
-		coll: coll,
-		docs: make(map[string]*notes.Note),
+		db:       db,
+		coll:     coll,
+		docs:     make(map[string]*notes.Note),
+		embedDir: embedDir,
 	}, nil
 }
 

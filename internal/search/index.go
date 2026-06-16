@@ -1,33 +1,21 @@
-// Copyright (C) 2025 Daniel Steevin
-//
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
-//
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details.
-//
-// You should have received a copy of the GNU General Public License
-// along with this program.  If not, see <https://www.gnu.org/licenses/>.
-
-// Package search provides full-text search over the neuron vault using an
-// in-memory inverted index with BM25-like relevance scoring.
 package search
 
 import (
+	"crypto/sha256"
+	"encoding/json"
+	"fmt"
 	"math"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
+	"time"
 	"unicode"
 
 	"github.com/steevin/neuron-cli/internal/notes"
 )
 
-// stopWords are common English words excluded from the index.
 var stopWords = map[string]bool{
 	"the": true, "a": true, "an": true, "is": true, "in": true,
 	"of": true, "to": true, "and": true, "or": true, "for": true,
@@ -36,26 +24,22 @@ var stopWords = map[string]bool{
 	"that": true, "this": true, "from": true, "not": true, "but": true,
 }
 
-// docEntry holds per-document token frequency data.
 type docEntry struct {
 	note *notes.Note
-	tf   map[string]float64 // token → weighted term frequency
+	tf   map[string]float64
 }
 
-// Index is a thread-safe in-memory inverted index.
 type Index struct {
 	mu       sync.RWMutex
-	inverted map[string]map[string]bool // token → set of note IDs
-	docs     map[string]*docEntry       // note ID → document data
+	inverted map[string]map[string]bool
+	docs     map[string]*docEntry
 }
 
-// SearchResult pairs a note with its relevance score.
 type SearchResult struct {
 	Note  *notes.Note
 	Score float64
 }
 
-// NewIndex creates an empty Index.
 func NewIndex() *Index {
 	return &Index{
 		inverted: make(map[string]map[string]bool),
@@ -63,7 +47,6 @@ func NewIndex() *Index {
 	}
 }
 
-// Rebuild replaces the entire index with the given note list.
 func (idx *Index) Rebuild(noteList []*notes.Note) {
 	idx.mu.Lock()
 	defer idx.mu.Unlock()
@@ -76,24 +59,19 @@ func (idx *Index) Rebuild(noteList []*notes.Note) {
 	}
 }
 
-// IndexNote adds or updates a single note in the index.
 func (idx *Index) IndexNote(note *notes.Note) {
 	idx.mu.Lock()
 	defer idx.mu.Unlock()
-	// Remove stale entry first.
 	idx.removeNote(note.ID)
 	idx.indexNote(note)
 }
 
-// RemoveNote removes a note from the index by ID.
 func (idx *Index) RemoveNote(noteID string) {
 	idx.mu.Lock()
 	defer idx.mu.Unlock()
 	idx.removeNote(noteID)
 }
 
-// Search performs a BM25-inspired ranked search and returns up to limit results.
-// A limit of 0 returns all matching results.
 func (idx *Index) Search(query string, limit int) []*SearchResult {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
@@ -147,22 +125,17 @@ func (idx *Index) Search(query string, limit int) []*SearchResult {
 	return results
 }
 
-// --- internal helpers (called with lock held) ---
-
 func (idx *Index) indexNote(note *notes.Note) {
 	tf := make(map[string]float64)
 
-	// Title tokens weighted 3×.
 	for _, tok := range tokenize(note.Title) {
 		tf[tok] += 3.0
 	}
-	// Tag tokens weighted 2×.
 	for _, tag := range note.Tags {
 		for _, tok := range tokenize(tag) {
 			tf[tok] += 2.0
 		}
 	}
-	// Body tokens weighted 1×.
 	for _, tok := range tokenize(note.Content) {
 		tf[tok] += 1.0
 	}
@@ -191,7 +164,128 @@ func (idx *Index) removeNote(noteID string) {
 	delete(idx.docs, noteID)
 }
 
-// tokenize lowercases s, splits on non-letter/digit runes, and removes stop words.
+// ─── Persistencia a disco ─────────────────────────────────────────────────────
+
+type cacheNoteMeta struct {
+	ID        string    `json:"id"`
+	Title     string    `json:"title"`
+	Tags      []string  `json:"tags"`
+	Content   string    `json:"body"`
+	Filename  string    `json:"filename"`
+	Created   time.Time `json:"created"`
+	Updated   time.Time `json:"updated"`
+}
+
+type cacheEntry struct {
+	Inverted map[string][]string          `json:"inverted"`
+	DocTF    map[string]map[string]float64 `json:"tf"`
+	Meta     map[string]cacheNoteMeta     `json:"meta"`
+}
+
+func (idx *Index) Save(cacheDir string) error {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+
+	entry := cacheEntry{
+		Inverted: make(map[string][]string, len(idx.inverted)),
+		DocTF:    make(map[string]map[string]float64, len(idx.docs)),
+		Meta:     make(map[string]cacheNoteMeta, len(idx.docs)),
+	}
+
+	for tok, postings := range idx.inverted {
+		ids := make([]string, 0, len(postings))
+		for id := range postings {
+			ids = append(ids, id)
+		}
+		entry.Inverted[tok] = ids
+	}
+
+	for id, doc := range idx.docs {
+		entry.DocTF[id] = doc.tf
+		entry.Meta[id] = cacheNoteMeta{
+			ID:       doc.note.ID,
+			Title:    doc.note.Title,
+			Tags:     doc.note.Tags,
+			Content:  doc.note.Content,
+			Filename: doc.note.RelPath,
+			Created:  doc.note.Created,
+			Updated:  doc.note.Updated,
+		}
+	}
+
+	if err := os.MkdirAll(cacheDir, 0o700); err != nil {
+		return fmt.Errorf("search: creating cache dir: %w", err)
+	}
+
+	path := filepath.Join(cacheDir, "index.json")
+	f, err := os.Create(path)
+	if err != nil {
+		return fmt.Errorf("search: creating cache file: %w", err)
+	}
+	defer f.Close()
+
+	enc := json.NewEncoder(f)
+	if err := enc.Encode(entry); err != nil {
+		return fmt.Errorf("search: encoding cache: %w", err)
+	}
+	return nil
+}
+
+func (idx *Index) Load(cacheDir string) error {
+	path := filepath.Join(cacheDir, "index.json")
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	var entry cacheEntry
+	dec := json.NewDecoder(f)
+	if err := dec.Decode(&entry); err != nil {
+		return fmt.Errorf("search: decoding cache: %w", err)
+	}
+
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+
+	idx.inverted = make(map[string]map[string]bool, len(entry.Inverted))
+	for tok, ids := range entry.Inverted {
+		postings := make(map[string]bool, len(ids))
+		for _, id := range ids {
+			postings[id] = true
+		}
+		idx.inverted[tok] = postings
+	}
+
+	idx.docs = make(map[string]*docEntry, len(entry.DocTF))
+	for id, tf := range entry.DocTF {
+		meta := entry.Meta[id]
+		note := &notes.Note{
+			ID:      meta.ID,
+			Title:   meta.Title,
+			Tags:    meta.Tags,
+			Content: meta.Content,
+			RelPath: meta.Filename,
+			Created: meta.Created,
+			Updated: meta.Updated,
+		}
+		idx.docs[id] = &docEntry{note: note, tf: tf}
+	}
+
+	return nil
+}
+
+func CacheKey(noteList []*notes.Note) string {
+	if len(noteList) == 0 {
+		return "empty"
+	}
+	h := sha256.New()
+	for _, n := range noteList {
+		fmt.Fprintf(h, "%s:%d\n", n.Path, n.Updated.UnixNano())
+	}
+	return fmt.Sprintf("%x", h.Sum(nil))
+}
+
 func tokenize(s string) []string {
 	s = strings.ToLower(s)
 	fields := strings.FieldsFunc(s, func(r rune) bool {
@@ -207,4 +301,35 @@ func tokenize(s string) []string {
 		out = append(out, f)
 	}
 	return out
+}
+
+// RebuildWithCache rebuilds the index from the note list, using a disk cache
+// when the note contents haven't changed. The cache key is derived from each
+// note's path and modification time.
+func RebuildWithCache(cacheDir string, noteList []*notes.Note) (*Index, error) {
+	idx := NewIndex()
+
+	key := CacheKey(noteList)
+	manifestPath := filepath.Join(cacheDir, "manifest")
+
+	// Check if we have a valid cache
+	loadCache := false
+	if data, err := os.ReadFile(manifestPath); err == nil {
+		if string(data) == key {
+			if err := idx.Load(cacheDir); err == nil {
+				loadCache = true
+			}
+		}
+	}
+
+	if !loadCache {
+		idx.Rebuild(noteList)
+		if err := idx.Save(cacheDir); err != nil {
+			// Non-fatal — index works in-memory either way
+			_ = err
+		}
+		_ = os.WriteFile(manifestPath, []byte(key), 0o600)
+	}
+
+	return idx, nil
 }

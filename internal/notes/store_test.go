@@ -1,18 +1,3 @@
-// Copyright (C) 2025 Daniel Steevin
-//
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
-//
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details.
-//
-// You should have received a copy of the GNU General Public License
-// along with this program.  If not, see <https://www.gnu.org/licenses/>.
-
 package notes
 
 import (
@@ -20,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestStoreCreateAndMove(t *testing.T) {
@@ -53,22 +39,19 @@ func TestStoreCreateAndMove(t *testing.T) {
 		t.Errorf("expected RelPath to be %q, got %q", expectedRelPath, note2.RelPath)
 	}
 
-	// Verify file physically exists in the subdirectory
 	expectedFullPath := filepath.Join(tmpDir, expectedRelPath)
 	if _, err := os.Stat(expectedFullPath); os.IsNotExist(err) {
 		t.Errorf("expected file to exist at %q", expectedFullPath)
 	}
 
-	// 3. Move the note to another subdirectory (e.g. 4. Archive)
+	// 3. Move the note
 	err = store.Move(note2.ID, "4. Archive")
 	if err != nil {
 		t.Fatalf("failed to move note: %v", err)
 	}
 
-	// Verify it moved physically
-	oldPath := expectedFullPath
-	if _, err := os.Stat(oldPath); err == nil {
-		t.Errorf("file should not exist at old path %q anymore", oldPath)
+	if _, err := os.Stat(expectedFullPath); err == nil {
+		t.Errorf("file should not exist at old path %q anymore", expectedFullPath)
 	}
 
 	newExpectedRelPath := filepath.Join("4. Archive", "test-project-note.md")
@@ -77,7 +60,6 @@ func TestStoreCreateAndMove(t *testing.T) {
 		t.Errorf("expected file to exist at %q after move", newExpectedFullPath)
 	}
 
-	// Fetch it again to see if we can resolve it and if its path updated
 	fetched, err := store.Get(note2.ID)
 	if err != nil {
 		t.Fatalf("failed to fetch moved note: %v", err)
@@ -94,7 +76,6 @@ func TestStoreDetectPARAFolders(t *testing.T) {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	// Create custom PARA folder structure (unnumbered but simple names)
 	customFolders := []string{"My Projects", "Personal Areas", "Useful Resources", "The Archive"}
 	for _, folder := range customFolders {
 		err := os.MkdirAll(filepath.Join(tmpDir, folder), 0o700)
@@ -134,5 +115,304 @@ func TestStoreDetectPARAFolders(t *testing.T) {
 		if !matched {
 			t.Errorf("detected folder %q didn't match any expected PARA pattern", det)
 		}
+	}
+}
+
+func TestStoreCacheBehavior(t *testing.T) {
+	dir := t.TempDir()
+	store, err := NewStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// IsCacheStale returns true when nothing has been cached yet
+	if !store.IsCacheStale() {
+		t.Error("expected IsCacheStale to be true before any List()")
+	}
+
+	// Create a note (invalidates cache internally)
+	_, err = store.Create("", "New Note", nil, "content")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// List populates cache
+	notes, err := store.List(ListOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(notes) != 1 {
+		t.Errorf("expected 1 note, got %d", len(notes))
+	}
+
+	// IsCacheStale returns false when nothing changed
+	if store.IsCacheStale() {
+		t.Error("expected IsCacheStale to be false immediately after List()")
+	}
+
+	// Simulate external change by modifying a file's mod time
+	note := notes[0]
+	os.Chtimes(note.Path, time.Now().Add(time.Hour), time.Now().Add(time.Hour))
+	if !store.IsCacheStale() {
+		t.Error("expected IsCacheStale to be true after external mod")
+	}
+
+	// Calling List again re-scans and returns fresh data
+	notes, err = store.List(ListOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(notes) != 1 {
+		t.Errorf("expected 1 note after re-scan, got %d", len(notes))
+	}
+	if store.IsCacheStale() {
+		t.Error("expected IsCacheStale to be false after fresh List()")
+	}
+}
+
+func TestStoreNeuronDir(t *testing.T) {
+	dir := t.TempDir()
+	store, err := NewStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	neuronDir := store.NeuronDir()
+	if neuronDir != filepath.Join(dir, ".neuron") {
+		t.Errorf("NeuronDir() = %q, want %q", neuronDir, filepath.Join(dir, ".neuron"))
+	}
+
+	if store.CacheDir() != filepath.Join(dir, ".neuron", "cache") {
+		t.Errorf("unexpected CacheDir: %q", store.CacheDir())
+	}
+
+	if store.EmbedDir() != filepath.Join(dir, ".neuron", "chromem") {
+		t.Errorf("unexpected EmbedDir: %q", store.EmbedDir())
+	}
+}
+
+func TestStoreListOptions(t *testing.T) {
+	dir := t.TempDir()
+	store, err := NewStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, _ = store.Create("", "Alpha", []string{"a"}, "")
+	_, _ = store.Create("", "Beta", []string{"b"}, "")
+	_, _ = store.Create("", "Gamma", []string{"a", "b"}, "")
+
+	tests := []struct {
+		name string
+		opts ListOptions
+		want int
+	}{
+		{"no filter", ListOptions{}, 3},
+		{"tag a", ListOptions{Tags: []string{"a"}}, 2},
+		{"tag b", ListOptions{Tags: []string{"b"}}, 2},
+		{"tag a and b", ListOptions{Tags: []string{"a", "b"}}, 1},
+		{"query alpha", ListOptions{Query: "alpha"}, 1},
+		{"limit 1", ListOptions{Limit: 1}, 1},
+		{"query nonexistent", ListOptions{Query: "zzz"}, 0},
+		{"tag nonexistent", ListOptions{Tags: []string{"zzz"}}, 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			notes, err := store.List(tt.opts)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(notes) != tt.want {
+				t.Errorf("got %d notes, want %d", len(notes), tt.want)
+			}
+		})
+	}
+}
+
+func TestStoreSortBy(t *testing.T) {
+	dir := t.TempDir()
+	store, err := NewStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	n1, _ := store.Create("", "C Note", nil, "")
+	time.Sleep(10 * time.Millisecond)
+	n2, _ := store.Create("", "B Note", nil, "")
+	time.Sleep(10 * time.Millisecond)
+	n3, _ := store.Create("", "A Note", nil, "")
+
+	// Default sort is by updated (descending): A, B, C
+	notes, _ := store.List(ListOptions{SortBy: ""})
+	if len(notes) != 3 {
+		t.Fatalf("expected 3 notes, got %d", len(notes))
+	}
+	if notes[0].ID != n3.ID {
+		t.Errorf("expected latest note first, got %s", notes[0].Title)
+	}
+
+	// Sort by title
+	notes, _ = store.List(ListOptions{SortBy: "title"})
+	if notes[0].Title != "A Note" {
+		t.Errorf("expected 'A Note' first when sorting by title, got %q", notes[0].Title)
+	}
+	if notes[2].ID != n1.ID {
+		t.Errorf("expected 'C Note' last when sorting by title, got %q", notes[2].Title)
+	}
+
+	_ = n1
+	_ = n2
+}
+
+func TestStoreUpdateReload(t *testing.T) {
+	dir := t.TempDir()
+	store, err := NewStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	note, err := store.Create("", "Original", nil, "Original content")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	note.Content = "Updated content"
+	if err := store.Update(note); err != nil {
+		t.Fatal(err)
+	}
+
+	reloaded, err := store.Reload(note)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reloaded.Content != "Updated content" {
+		t.Errorf("Content = %q, want %q", reloaded.Content, "Updated content")
+	}
+}
+
+func TestStoreTags(t *testing.T) {
+	dir := t.TempDir()
+	store, err := NewStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, _ = store.Create("", "Note1", []string{"go", "test"}, "")
+	_, _ = store.Create("", "Note2", []string{"python", "test"}, "")
+	_, _ = store.Create("", "Note3", []string{"go"}, "")
+
+	tags, err := store.Tags()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if tags["go"] != 2 {
+		t.Errorf("expected 'go' count to be 2, got %d", tags["go"])
+	}
+	if tags["test"] != 2 {
+		t.Errorf("expected 'test' count to be 2, got %d", tags["test"])
+	}
+	if tags["python"] != 1 {
+		t.Errorf("expected 'python' count to be 1, got %d", tags["python"])
+	}
+}
+
+func TestStoreCount(t *testing.T) {
+	dir := t.TempDir()
+	store, err := NewStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	count, err := store.Count()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Errorf("expected 0, got %d", count)
+	}
+
+	_, _ = store.Create("", "N1", nil, "")
+	_, _ = store.Create("", "N2", nil, "")
+
+	count, _ = store.Count()
+	if count != 2 {
+		t.Errorf("expected 2, got %d", count)
+	}
+}
+
+func TestStoreDelete(t *testing.T) {
+	dir := t.TempDir()
+	store, err := NewStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	note, err := store.Create("", "Delete Me", nil, "bye")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := store.Delete(note.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	// Should be in trash
+	trashDir := filepath.Join(dir, ".trash")
+	if _, err := os.Stat(trashDir); os.IsNotExist(err) {
+		t.Error("trash directory should exist")
+	}
+
+	// Should not show up in list
+	notes, _ := store.List(ListOptions{})
+	if len(notes) != 0 {
+		t.Errorf("expected 0 notes after delete, got %d", len(notes))
+	}
+}
+
+func TestStoreGetByPath(t *testing.T) {
+	dir := t.TempDir()
+	store, err := NewStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	note, err := store.Create("", "Hello World", nil, "content")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Get by ID
+	byID, err := store.Get(note.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if byID.Title != "Hello World" {
+		t.Errorf("expected 'Hello World', got %q", byID.Title)
+	}
+
+	// Get by title
+	byTitle, err := store.Get("Hello World")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if byTitle.ID != note.ID {
+		t.Errorf("expected ID %q, got %q", note.ID, byTitle.ID)
+	}
+
+	// Get by filename
+	byFile, err := store.Get("hello-world")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if byFile.ID != note.ID {
+		t.Errorf("expected ID %q, got %q", note.ID, byFile.ID)
+	}
+
+	// Not found
+	_, err = store.Get("nonexistent")
+	if err != ErrNoteNotFound {
+		t.Errorf("expected ErrNoteNotFound, got %v", err)
 	}
 }
