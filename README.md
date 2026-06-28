@@ -89,7 +89,7 @@ The breadcrumb bar at the bottom of the TUI shows you the file's path (e.g., `�
 
 #### Capture thoughts instantly (Clipboard & Paste)
 * **Instant Appending (`ctrl+v`):** Press `ctrl+v` on any note in the list to append your clipboard content directly to the file on disk. Perfect for clipping web highlights or stack traces.
-* **Smart Asset Management:** If your clipboard contains an image URL or local path, Neuron downloads/copies it into your vault's `assets/` directory and creates a clean Markdown link automatically.
+* **Smart Asset Management:** If your clipboard contains an image URL or local path, Neuron downloads/copies it into your vault's Obsidian attachment folder when configured, otherwise `assets/`, and creates a clean Markdown link automatically. Remote downloads are capped at 50 MiB.
 * **Bracketed Paste:** Paste a block of text when creating a note to automatically set the first line as the title and the rest as the body.
 
 #### Find anything as fast as you think it (Dual Search)
@@ -107,6 +107,12 @@ neuron today                                        # Auto-generates your daily 
 * **Obsidian-style Wikilinks:** Full support for `[[wikilink]]` extraction and indexing.
 * **Tags:** Inline `#tags` are automatically indexed and searchable.
 * **Knowledge Summary:** Press `g` in the TUI to see an instant count of notes (nodes) and connections (edges) in your personal knowledge graph.
+* **Graph Maintenance:** Use `neuron backlinks`, `neuron orphan`, and `neuron doctor` to find backlinks, isolated notes, and broken wikilinks.
+
+#### Keep the vault healthy
+* **Doctor Checks:** `neuron doctor` reports note/tag counts, orphan notes, broken links, trash contents, Git status, Obsidian detection, and AI connectivity.
+* **Timeline:** `neuron timeline` shows recently updated notes, or creation history with `--created`.
+* **Trash Restore:** Deleted notes move to `.trash`; use `neuron restore --list` and `neuron restore <note>` to recover them.
 
 #### Friendly interactive prompts
 Forgot a flag? Neuron prompts you with terminal forms powered by `huh` to guide you through note creation, folder picking, and confirmation dialogs.
@@ -161,13 +167,16 @@ Fuzzy-search any command in the TUI at any time by pressing `/`:
 | `/today` | Open or create today's daily note |
 | `/edit`, `/e` | Open the selected note in `$EDITOR` |
 | `/copy`, `/c` | Copy the current note to clipboard |
-| `/attach <path_or_url>`| Download or copy image to assets/ and attach to note |
+| `/attach <path_or_url>`| Download or copy an asset and attach it to the note |
 | `/links`, `/l` | Open the first URL in the note in your browser |
 | `/move <folder>` | Move the selected note to a PARA folder |
 | `/rm` | Delete the selected note |
 | `/sync`, `/s` | Git push (with optional pull) |
 | `/stats` | Show vault statistics |
-| `/open`, `/o` | Reveal vault in Finder |
+| `/doctor`, `/health` | Show quick vault health in the status bar |
+| `/backlinks` | Show backlinks for the selected note |
+| `/orphan` | Show orphan note count and examples |
+| `/open`, `/o` | Open the vault in the system file browser |
 | `/theme dark\|light` | Switch the TUI colour scheme live |
 | `/quit` | Exit neuron |
 
@@ -189,12 +198,22 @@ neuron list -q "kubernetes"              # full-text / semantic search
 neuron move "standup notes" projects    # move note to your Projects folder
 neuron attach "standup notes" ./img.png # attach an image or file to a note
 neuron links "standup notes"             # extract and open links or images
+neuron backlinks "standup notes"         # show notes linking to a note
+neuron orphan                            # list notes without links or backlinks
+neuron timeline --created                # note creation timeline
+neuron restore --list                    # list notes in .trash
+neuron restore "old note" --folder "4. Archive" # restore a trashed note
+neuron doctor                            # vault health check
 neuron sync --pull                       # git pull + push
+neuron sync --remote backup              # sync using a named Git remote
+neuron sync --remote https://github.com/me/notes.git # sync using a URL for this run
 neuron stats                             # note count, tag count
-neuron config set editor nvim            # change default editor
+neuron config set editor "code -w"        # change default editor (arguments supported)
 neuron config set theme dark             # set colour theme
 neuron mcp                               # start the MCP server
 ```
+
+Notes created or moved through Neuron must stay inside the configured vault. Relative folder paths such as `../outside` are rejected to protect your filesystem.
 
 ---
 
@@ -212,11 +231,18 @@ Neuron exposes your vault as a [Model Context Protocol (MCP)](https://modelconte
 
 Once configured, you can ask your AI to search, create, summarize, or move notes directly from your vault — without leaving the chat.
 
+For safer agent access, run MCP in read-only mode or write an audit log:
+
+```bash
+neuron mcp --read-only
+neuron mcp --audit-log ~/.local/state/neuron/mcp-audit.jsonl
+```
+
 ---
 
 ### Vault Format
 
-Neuron uses plain Markdown with YAML frontmatter — identical to Obsidian. Point Neuron at an existing Obsidian vault, and it just works.
+Neuron uses plain Markdown with YAML frontmatter — identical to Obsidian. Point Neuron at an existing Obsidian vault, and it just works. Neuron also reads Obsidian's attachment folder setting from `.obsidian/app.json` when saving attached files.
 
 ```markdown
 ---

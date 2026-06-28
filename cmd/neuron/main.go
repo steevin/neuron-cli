@@ -20,11 +20,13 @@ package main
 import (
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"sort"
 	"strings"
 	"time"
 
@@ -41,7 +43,7 @@ import (
 )
 
 // la versión se inyecta al compilar con -ldflags "-X main.version=<tag>".
-var version = "1.3.0"
+var version = "1.4.0"
 
 var rootCmd = &cobra.Command{
 	Use:   "neuron",
@@ -58,7 +60,7 @@ Features:
 
 TUI Commands (Press '/' inside the TUI):
   /copy, /c                Copy the current note to clipboard
-  /attach <path_or_url>    Download or copy image to assets/ and attach to note
+  /attach <path_or_url>    Download/copy an asset and attach it to the note
   /links, /l               Open the first URL in the note in your browser
   /add <title>             Create a new note (skip picker with folder/title)
   /edit, /e                Edit current note in external editor
@@ -66,8 +68,16 @@ TUI Commands (Press '/' inside the TUI):
   /sync, /s                Sync vault with Git remote
   /today, /t               Open or create today's daily note
   /theme                   Toggle UI theme (dark/light)
-  /open, /o                Open vault folder in Finder
+  /open, /o                Open vault folder in the system file browser
   /stats                   Show vault statistics
+
+CLI Graph & Maintenance:
+  backlinks <note>          Show notes linking to a note
+  orphan                    List notes with no links or backlinks
+  timeline                  Show recent notes by updated/created time
+  restore --list            List notes in .trash
+  restore <note>            Restore a note from .trash
+  doctor                    Check vault health, Git, AI, and broken links
 
 Update:
   Homebrew   brew upgrade steevin/tap/neuron
@@ -92,14 +102,45 @@ Run 'neuron help <command>' for detailed usage of any subcommand.`,
 	},
 }
 
+func loadConfig() (*config.Config, error) {
+	cfg, err := config.Load()
+	if err != nil {
+		return nil, err
+	}
+	if cfg == nil {
+		return nil, fmt.Errorf("config: empty configuration")
+	}
+	return cfg, nil
+}
+
+func openExternal(target string) error {
+	var c *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		c = exec.Command("open", target)
+	case "windows":
+		c = exec.Command("rundll32", "url.dll,FileProtocolHandler", target)
+	default:
+		c = exec.Command("xdg-open", target)
+	}
+	return c.Start()
+}
+
 var attachCmd = &cobra.Command{
 	Use:   "attach [note ID or title] [path or URL]",
 	Short: "Attach an image or file to a note",
+	Long: `Attach a local file or HTTP(S) URL to a note.
+
+Assets are stored in the vault's Obsidian attachment folder when configured,
+otherwise in assets/. Remote downloads are capped at 50 MiB.`,
 	Example: `  neuron attach "My Note" /path/to/image.png
   neuron attach "My Note" https://example.com/image.jpg`,
-	Args:  cobra.ExactArgs(2),
+	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, _ := config.Load()
+		cfg, err := loadConfig()
+		if err != nil {
+			return err
+		}
 		store, err := notes.NewStore(cfg.VaultPath)
 		if err != nil {
 			return err
@@ -123,12 +164,15 @@ var attachCmd = &cobra.Command{
 }
 
 var linksCmd = &cobra.Command{
-	Use:   "links [note ID or title]",
-	Short: "Extract and open links or images from a note",
+	Use:     "links [note ID or title]",
+	Short:   "Extract and open links or images from a note",
 	Example: `  neuron links "My Note"`,
-	Args:  cobra.ExactArgs(1),
+	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, _ := config.Load()
+		cfg, err := loadConfig()
+		if err != nil {
+			return err
+		}
 		store, err := notes.NewStore(cfg.VaultPath)
 		if err != nil {
 			return err
@@ -196,16 +240,7 @@ var linksCmd = &cobra.Command{
 		}
 
 		fmt.Printf("Opening %s...\n", target)
-		var c *exec.Cmd
-		switch runtime.GOOS {
-		case "darwin":
-			c = exec.Command("open", target)
-		case "windows":
-			c = exec.Command("cmd", "/c", "start", target)
-		default:
-			c = exec.Command("xdg-open", target)
-		}
-		return c.Start()
+		return openExternal(target)
 	},
 }
 
@@ -226,7 +261,10 @@ var addCmd = &cobra.Command{
 		var folder string
 		folderFlag, _ := cmd.Flags().GetString("folder")
 
-		cfg, _ := config.Load()
+		cfg, err := loadConfig()
+		if err != nil {
+			return err
+		}
 		store, err := notes.NewStore(cfg.VaultPath)
 		if err != nil {
 			return err
@@ -325,7 +363,10 @@ var addCmd = &cobra.Command{
 		fmt.Printf("Created %s\n", note.Path)
 
 		if !noEdit {
-			c := exec.Command(resolveEditor(cfg), note.Path)
+			c, err := editorCommand(cfg, note.Path)
+			if err != nil {
+				return err
+			}
 			c.Stdin, c.Stdout, c.Stderr = os.Stdin, os.Stdout, os.Stderr
 			return c.Run()
 		}
@@ -342,7 +383,10 @@ var listCmd = &cobra.Command{
   neuron list -q "machine learning"
   neuron list --tag meeting --limit 5`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, _ := config.Load()
+		cfg, err := loadConfig()
+		if err != nil {
+			return err
+		}
 		store, err := notes.NewStore(cfg.VaultPath)
 		if err != nil {
 			return err
@@ -357,9 +401,14 @@ var listCmd = &cobra.Command{
 				if err != nil {
 					return fmt.Errorf("semantic search setup failed: %v", err)
 				}
-				noteList, _ := store.List(notes.ListOptions{})
+				noteList, err := store.List(notes.ListOptions{})
+				if err != nil {
+					return err
+				}
 				fmt.Println("Generating embeddings...")
-				_ = idx.Rebuild(cmd.Context(), noteList)
+				if err := idx.Rebuild(cmd.Context(), noteList); err != nil {
+					return err
+				}
 				res, err := idx.Search(cmd.Context(), query, limit)
 				if err != nil {
 					return err
@@ -372,7 +421,10 @@ var listCmd = &cobra.Command{
 				return nil
 			} else {
 				// búsqueda por palabras (BM25)
-				noteList, _ := store.List(notes.ListOptions{})
+				noteList, err := store.List(notes.ListOptions{})
+				if err != nil {
+					return err
+				}
 				idx, err := search.RebuildWithCache(store.CacheDir(), noteList)
 				if err != nil {
 					return fmt.Errorf("search setup failed: %v", err)
@@ -403,12 +455,12 @@ var listCmd = &cobra.Command{
 	},
 }
 
-// resolveEditor decide qué editor usar en este orden:
+// editorSpec decide qué editor usar en este orden:
 //  1. cfg.Editor (guardado en config.toml)
 //  2. $EDITOR
 //  3. $VISUAL
 //  4. "vi" como último recurso
-func resolveEditor(cfg *config.Config) string {
+func editorSpec(cfg *config.Config) string {
 	editor := "vi"
 	if cfg.Editor != "" {
 		editor = cfg.Editor
@@ -418,19 +470,78 @@ func resolveEditor(cfg *config.Config) string {
 		editor = e
 	}
 
-	// limpiamos la entrada por si alguien intentó inyectar comandos raros (ej. vi; rm -rf /)
-	editorParts := strings.Fields(editor)
-	if len(editorParts) > 0 {
-		return editorParts[0]
+	return editor
+}
+
+func editorCommand(cfg *config.Config, path string) (*exec.Cmd, error) {
+	parts, err := splitCommand(editorSpec(cfg))
+	if err != nil {
+		return nil, err
 	}
-	return "vi"
+	if len(parts) == 0 {
+		parts = []string{"vi"}
+	}
+	args := append(parts[1:], path)
+	return exec.Command(parts[0], args...), nil
+}
+
+func splitCommand(input string) ([]string, error) {
+	var parts []string
+	var current strings.Builder
+	var quote rune
+	escaped := false
+
+	for _, r := range strings.TrimSpace(input) {
+		if escaped {
+			current.WriteRune(r)
+			escaped = false
+			continue
+		}
+		if r == '\\' {
+			escaped = true
+			continue
+		}
+		if quote != 0 {
+			if r == quote {
+				quote = 0
+			} else {
+				current.WriteRune(r)
+			}
+			continue
+		}
+		if r == '\'' || r == '"' {
+			quote = r
+			continue
+		}
+		if r == ';' || r == '&' || r == '|' || r == '<' || r == '>' || r == '`' {
+			return nil, fmt.Errorf("editor command contains unsupported shell metacharacter %q", r)
+		}
+		if r == ' ' || r == '\t' || r == '\n' {
+			if current.Len() > 0 {
+				parts = append(parts, current.String())
+				current.Reset()
+			}
+			continue
+		}
+		current.WriteRune(r)
+	}
+	if escaped {
+		current.WriteRune('\\')
+	}
+	if quote != 0 {
+		return nil, fmt.Errorf("editor command has unterminated quote")
+	}
+	if current.Len() > 0 {
+		parts = append(parts, current.String())
+	}
+	return parts, nil
 }
 
 // editCmd abre una nota en el editor que hayas configurado.
 var editCmd = &cobra.Command{
-	Use:     "edit [id-or-title]",
-	Short:   "Open a note in your editor",
-	Long:    "Locate a note by ID or fuzzy title match and open it in the configured editor.",
+	Use:   "edit [id-or-title]",
+	Short: "Open a note in your editor",
+	Long:  "Locate a note by ID or fuzzy title match and open it in the configured editor.",
 	Example: `  neuron edit "Meeting Notes"
   neuron edit d8c1b3f`,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -450,7 +561,10 @@ var editCmd = &cobra.Command{
 		} else {
 			idOrTitle = strings.Join(args, " ")
 		}
-		cfg, _ := config.Load()
+		cfg, err := loadConfig()
+		if err != nil {
+			return err
+		}
 		store, err := notes.NewStore(cfg.VaultPath)
 		if err != nil {
 			return err
@@ -459,7 +573,10 @@ var editCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		c := exec.Command(resolveEditor(cfg), note.Path)
+		c, err := editorCommand(cfg, note.Path)
+		if err != nil {
+			return err
+		}
 		c.Stdin, c.Stdout, c.Stderr = os.Stdin, os.Stdout, os.Stderr
 		return c.Run()
 	},
@@ -467,9 +584,9 @@ var editCmd = &cobra.Command{
 
 // rmCmd borra una nota del vault.
 var rmCmd = &cobra.Command{
-	Use:     "rm [id-or-title]",
-	Short:   "Delete a note",
-	Long:    "Permanently delete a note from the vault. Requires --force/-f to skip confirmation.",
+	Use:   "rm [id-or-title]",
+	Short: "Delete a note",
+	Long:  "Permanently delete a note from the vault. Requires --force/-f to skip confirmation.",
 	Example: `  neuron rm "Old Note"
   neuron rm "Old Note" --force`,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -489,7 +606,10 @@ var rmCmd = &cobra.Command{
 		} else {
 			idOrTitle = strings.Join(args, " ")
 		}
-		cfg, _ := config.Load()
+		cfg, err := loadConfig()
+		if err != nil {
+			return err
+		}
 		store, err := notes.NewStore(cfg.VaultPath)
 		if err != nil {
 			return err
@@ -515,15 +635,17 @@ var rmCmd = &cobra.Command{
 	},
 }
 
-// openCmd abre la carpeta del vault en Finder.
+// openCmd abre la carpeta del vault en el explorador de archivos del sistema.
 var openCmd = &cobra.Command{
 	Use:   "open",
-	Short: "Open vault folder in Finder",
-	Long:  "Open the vault directory in the macOS Finder (uses 'open' under the hood).",
+	Short: "Open vault folder",
+	Long:  "Open the vault directory in the system file browser.",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, _ := config.Load()
-		c := exec.Command("open", "--", cfg.VaultPath)
-		return c.Run()
+		cfg, err := loadConfig()
+		if err != nil {
+			return err
+		}
+		return openExternal(cfg.VaultPath)
 	},
 }
 
@@ -533,13 +655,22 @@ var statsCmd = &cobra.Command{
 	Short: "Show vault statistics",
 	Long:  "Display note count, tag count, word count, and other vault-level metrics.",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, _ := config.Load()
+		cfg, err := loadConfig()
+		if err != nil {
+			return err
+		}
 		store, err := notes.NewStore(cfg.VaultPath)
 		if err != nil {
 			return err
 		}
-		count, _ := store.Count()
-		tags, _ := store.Tags()
+		count, err := store.Count()
+		if err != nil {
+			return err
+		}
+		tags, err := store.Tags()
+		if err != nil {
+			return err
+		}
 		titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#58a6ff"))
 		valueStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#3fb950"))
 		fmt.Printf("%s %s\n", titleStyle.Render("Notes:"), valueStyle.Render(fmt.Sprintf("%d", count)))
@@ -554,7 +685,10 @@ var todayCmd = &cobra.Command{
 	Short: "Open or create today's daily note",
 	Long:  "Open the daily note for today (YYYY-MM-DD.md). Creates it if it doesn't exist.",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, _ := config.Load()
+		cfg, err := loadConfig()
+		if err != nil {
+			return err
+		}
 		store, err := notes.NewStore(cfg.VaultPath)
 		if err != nil {
 			return err
@@ -571,7 +705,10 @@ var todayCmd = &cobra.Command{
 				return err
 			}
 		}
-		c := exec.Command(resolveEditor(cfg), note.Path)
+		c, err := editorCommand(cfg, note.Path)
+		if err != nil {
+			return err
+		}
 		c.Stdin, c.Stdout, c.Stderr = os.Stdin, os.Stdout, os.Stderr
 		return c.Run()
 	},
@@ -586,7 +723,10 @@ var moveCmd = &cobra.Command{
 		var idOrTitle string
 		var targetFolder string
 
-		cfg, _ := config.Load()
+		cfg, err := loadConfig()
+		if err != nil {
+			return err
+		}
 		store, err := notes.NewStore(cfg.VaultPath)
 		if err != nil {
 			return err
@@ -659,14 +799,23 @@ var moveCmd = &cobra.Command{
 
 // syncCmd sincroniza el vault con un remoto de Git.
 var syncCmd = &cobra.Command{
-	Use:     "sync",
-	Short:   "Sync vault with Git remote",
-	Long:    "Commit any local changes and push to the configured Git remote. Use --pull to fetch first.",
+	Use:   "sync",
+	Short: "Sync vault with Git remote",
+	Long:  "Commit any local changes and push to the configured Git remote. Use --pull to fetch first, or --remote to override the configured remote for this run.",
 	Example: `  neuron sync
-  neuron sync --pull`,
+  neuron sync --pull
+  neuron sync --remote backup
+  neuron sync --remote https://github.com/me/notes.git`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, _ := config.Load()
-		syncer := gitsync.NewSyncer(cfg.VaultPath, cfg.GitRemote)
+		cfg, err := loadConfig()
+		if err != nil {
+			return err
+		}
+		remote, _ := cmd.Flags().GetString("remote")
+		if remote == "" {
+			remote = cfg.GitRemote
+		}
+		syncer := gitsync.NewSyncer(cfg.VaultPath, remote)
 		pull, _ := cmd.Flags().GetBool("pull")
 		if pull {
 			if err := syncer.Pull(); err != nil {
@@ -685,14 +834,293 @@ var syncCmd = &cobra.Command{
 	},
 }
 
+var backlinksCmd = &cobra.Command{
+	Use:   "backlinks [id-or-title]",
+	Short: "Show notes that link to a note",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, err := loadConfig()
+		if err != nil {
+			return err
+		}
+		store, err := notes.NewStore(cfg.VaultPath)
+		if err != nil {
+			return err
+		}
+		note, err := store.Get(strings.Join(args, " "))
+		if err != nil {
+			return err
+		}
+		noteList, err := store.List(notes.ListOptions{})
+		if err != nil {
+			return err
+		}
+		graph := notes.BuildGraph(noteList)
+		node := graph.Nodes[note.Title]
+		if node == nil || len(node.Backlinks) == 0 {
+			fmt.Printf("No backlinks found for %q\n", note.Title)
+			return nil
+		}
+
+		byTitle := make(map[string]*notes.Note, len(noteList))
+		for _, n := range noteList {
+			byTitle[n.Title] = n
+		}
+		fmt.Printf("Backlinks for %q:\n", note.Title)
+		for _, title := range node.Backlinks {
+			if linked := byTitle[title]; linked != nil {
+				fmt.Printf("- %s (%s)\n", title, linked.RelPath)
+			} else {
+				fmt.Printf("- %s\n", title)
+			}
+		}
+		return nil
+	},
+}
+
+var orphanCmd = &cobra.Command{
+	Use:   "orphan",
+	Short: "List notes with no links or backlinks",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, err := loadConfig()
+		if err != nil {
+			return err
+		}
+		store, err := notes.NewStore(cfg.VaultPath)
+		if err != nil {
+			return err
+		}
+		limit, _ := cmd.Flags().GetInt("limit")
+		noteList, err := store.List(notes.ListOptions{})
+		if err != nil {
+			return err
+		}
+		graph := notes.BuildGraph(noteList)
+		orphans := graph.Orphans()
+		if limit > 0 && len(orphans) > limit {
+			orphans = orphans[:limit]
+		}
+		if len(orphans) == 0 {
+			fmt.Println("No orphan notes found.")
+			return nil
+		}
+		for _, node := range orphans {
+			fmt.Printf("- %s (%s)\n", node.Title, node.Path)
+		}
+		return nil
+	},
+}
+
+var timelineCmd = &cobra.Command{
+	Use:   "timeline",
+	Short: "Show notes ordered by updated or created time",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, err := loadConfig()
+		if err != nil {
+			return err
+		}
+		store, err := notes.NewStore(cfg.VaultPath)
+		if err != nil {
+			return err
+		}
+		limit, _ := cmd.Flags().GetInt("limit")
+		created, _ := cmd.Flags().GetBool("created")
+		sortBy := "updated"
+		if created {
+			sortBy = "created"
+		}
+		noteList, err := store.List(notes.ListOptions{Limit: limit, SortBy: sortBy})
+		if err != nil {
+			return err
+		}
+		for _, n := range noteList {
+			ts := n.Updated
+			label := "updated"
+			if created {
+				ts = n.Created
+				label = "created"
+			}
+			fmt.Printf("%s %-7s %s (%s)\n", ts.Format("2006-01-02 15:04"), label, n.Title, n.RelPath)
+		}
+		return nil
+	},
+}
+
+var restoreCmd = &cobra.Command{
+	Use:   "restore [id-or-title]",
+	Short: "List or restore notes from .trash",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, err := loadConfig()
+		if err != nil {
+			return err
+		}
+		store, err := notes.NewStore(cfg.VaultPath)
+		if err != nil {
+			return err
+		}
+		listOnly, _ := cmd.Flags().GetBool("list")
+		folder, _ := cmd.Flags().GetString("folder")
+		if listOnly {
+			trashed, err := store.ListTrash()
+			if err != nil {
+				return err
+			}
+			if len(trashed) == 0 {
+				fmt.Println("Trash is empty.")
+				return nil
+			}
+			for _, n := range trashed {
+				fmt.Printf("- %s (%s)\n", n.Title, n.RelPath)
+			}
+			return nil
+		}
+		if len(args) == 0 {
+			return fmt.Errorf("id or title required, or use --list")
+		}
+		restored, err := store.Restore(strings.Join(args, " "), folder)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("Restored %s\n", restored.RelPath)
+		return nil
+	},
+}
+
+var doctorCmd = &cobra.Command{
+	Use:   "doctor",
+	Short: "Check vault health and local integrations",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, err := loadConfig()
+		if err != nil {
+			return err
+		}
+		fmt.Printf("Config: ok\n")
+		fmt.Printf("Vault: %s\n", cfg.VaultPath)
+
+		store, err := notes.NewStore(cfg.VaultPath)
+		if err != nil {
+			return err
+		}
+		if store.Vault != nil && store.Vault.IsObsidian {
+			fmt.Println("Obsidian: detected")
+		} else {
+			fmt.Println("Obsidian: not detected")
+		}
+
+		noteList, err := store.List(notes.ListOptions{})
+		if err != nil {
+			return err
+		}
+		tags, err := store.Tags()
+		if err != nil {
+			return err
+		}
+		graph := notes.BuildGraph(noteList)
+		broken := brokenLinks(noteList, graph)
+		orphans := graph.Orphans()
+		trashed, err := store.ListTrash()
+		if err != nil {
+			return err
+		}
+
+		fmt.Printf("Notes: %d\n", len(noteList))
+		fmt.Printf("Tags: %d\n", len(tags))
+		fmt.Printf("Orphans: %d\n", len(orphans))
+		fmt.Printf("Broken links: %d\n", len(broken))
+		fmt.Printf("Trash: %d\n", len(trashed))
+		printGitDoctor(cfg)
+		printAIDoctor(cfg)
+
+		if len(broken) > 0 {
+			fmt.Println("Broken link samples:")
+			limit := 5
+			if len(broken) < limit {
+				limit = len(broken)
+			}
+			for _, item := range broken[:limit] {
+				fmt.Printf("- %s -> [[%s]]\n", item.Source, item.Target)
+			}
+		}
+		return nil
+	},
+}
+
+type brokenLink struct {
+	Source string
+	Target string
+}
+
+func brokenLinks(noteList []*notes.Note, graph *notes.Graph) []brokenLink {
+	var broken []brokenLink
+	for _, n := range noteList {
+		for _, target := range n.Links {
+			if _, ok := graph.Nodes[target]; !ok {
+				broken = append(broken, brokenLink{Source: n.Title, Target: target})
+			}
+		}
+	}
+	sort.Slice(broken, func(i, j int) bool {
+		if strings.ToLower(broken[i].Source) == strings.ToLower(broken[j].Source) {
+			return strings.ToLower(broken[i].Target) < strings.ToLower(broken[j].Target)
+		}
+		return strings.ToLower(broken[i].Source) < strings.ToLower(broken[j].Source)
+	})
+	return broken
+}
+
+func printGitDoctor(cfg *config.Config) {
+	if _, err := os.Stat(filepath.Join(cfg.VaultPath, ".git")); err != nil {
+		fmt.Println("Git: not initialized")
+		return
+	}
+	syncer := gitsync.NewSyncer(cfg.VaultPath, cfg.GitRemote)
+	changed, err := syncer.Status()
+	if err != nil {
+		fmt.Printf("Git: error: %v\n", err)
+		return
+	}
+	if cfg.GitRemote == "" {
+		fmt.Printf("Git: initialized, %d changed file(s), no remote configured\n", len(changed))
+		return
+	}
+	fmt.Printf("Git: initialized, %d changed file(s), remote %q\n", len(changed), cfg.GitRemote)
+}
+
+func printAIDoctor(cfg *config.Config) {
+	if !cfg.AI.Enabled {
+		fmt.Println("AI: disabled")
+		return
+	}
+	if cfg.AI.Provider != "ollama" {
+		fmt.Printf("AI: enabled provider %q\n", cfg.AI.Provider)
+		return
+	}
+	client := &http.Client{Timeout: 2 * time.Second}
+	url := strings.TrimRight(cfg.AI.OllamaURL, "/") + "/api/tags"
+	resp, err := client.Get(url)
+	if err != nil {
+		fmt.Printf("AI: ollama unreachable: %v\n", err)
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		fmt.Printf("AI: ollama reachable (%s)\n", cfg.AI.Model)
+		return
+	}
+	fmt.Printf("AI: ollama returned %s\n", resp.Status)
+}
+
 // mcpCmd inicia el servidor MCP.
 var mcpCmd = &cobra.Command{
 	Use:   "mcp",
 	Short: "Start the MCP server for AI agent integration",
 	Long: `Start an MCP (Model Context Protocol) server that exposes vault tools
-to AI agents such as Claude Desktop, Cursor, or any MCP-compatible client.`,
+to AI agents such as Claude Desktop, Cursor, or any MCP-compatible client.
+
+Use --read-only to expose search/list/read tools while blocking note writes.
+Use --audit-log to append JSONL records for MCP write attempts.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := config.Load()
+		cfg, err := loadConfig()
 		if err != nil {
 			return err
 		}
@@ -701,6 +1129,8 @@ to AI agents such as Claude Desktop, Cursor, or any MCP-compatible client.`,
 		if vaultOverride != "" {
 			cfg.VaultPath = vaultOverride
 		}
+		readOnly, _ := cmd.Flags().GetBool("read-only")
+		auditLog, _ := cmd.Flags().GetString("audit-log")
 
 		store, err := notes.NewStore(cfg.VaultPath)
 		if err != nil {
@@ -708,13 +1138,19 @@ to AI agents such as Claude Desktop, Cursor, or any MCP-compatible client.`,
 		}
 
 		// construimos el índice con persistencia
-		noteList, _ := store.List(notes.ListOptions{})
+		noteList, err := store.List(notes.ListOptions{})
+		if err != nil {
+			return err
+		}
 		idx, err := search.RebuildWithCache(store.CacheDir(), noteList)
 		if err != nil {
 			return fmt.Errorf("failed to build search index: %v", err)
 		}
 
-		srv, err := mcp.NewServer(cfg, store, idx)
+		srv, err := mcp.NewServerWithOptions(cfg, store, idx, mcp.ServerOptions{
+			ReadOnly: readOnly,
+			AuditLog: auditLog,
+		})
 		if err != nil {
 			return err
 		}
@@ -739,7 +1175,7 @@ var configCmd = &cobra.Command{
 
 Supported keys:
   vault_path   Absolute path to your Markdown vault
-  editor       Command used to open notes (e.g. code, nvim, nano)
+  editor       Command used to open notes (e.g. code -w, nvim, nano)
   theme        TUI colour scheme: dark or light
   git_remote   Git remote name or URL used by 'neuron sync'`,
 }
@@ -868,8 +1304,21 @@ func init() {
 	syncCmd.Flags().String("remote", "", "Override the configured Git remote")
 	syncCmd.Flags().Bool("pull", false, "Pull from remote before pushing")
 
+	// flags de orphanCmd
+	orphanCmd.Flags().Int("limit", 50, "Maximum number of orphan notes to display")
+
+	// flags de timelineCmd
+	timelineCmd.Flags().Int("limit", 50, "Maximum number of notes to display")
+	timelineCmd.Flags().Bool("created", false, "Sort by creation time instead of updated time")
+
+	// flags de restoreCmd
+	restoreCmd.Flags().Bool("list", false, "List notes currently in .trash")
+	restoreCmd.Flags().String("folder", "", "Folder to restore the note into")
+
 	// flags de mcpCmd
 	mcpCmd.Flags().String("vault", "", "Override vault path for this session")
+	mcpCmd.Flags().Bool("read-only", false, "Disable MCP tools that write to the vault")
+	mcpCmd.Flags().String("audit-log", "", "Append MCP write attempts to this JSONL file")
 }
 
 func main() {
@@ -889,6 +1338,11 @@ func main() {
 		todayCmd,
 		moveCmd,
 		syncCmd,
+		backlinksCmd,
+		orphanCmd,
+		timelineCmd,
+		restoreCmd,
+		doctorCmd,
 		mcpCmd,
 		tuiCmd,
 		versionCmd,

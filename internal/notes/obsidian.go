@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // ObsidianSettings holds a subset of Obsidian's app.json relevant to note
@@ -79,10 +80,8 @@ func (v *ObsidianVault) NoteLocation(_ string) string {
 func IsObsidianFile(path string) bool {
 	normalised := filepath.ToSlash(path)
 	for _, seg := range []string{"/.obsidian/", "/.trash/"} {
-		for i := 0; i <= len(normalised)-len(seg); i++ {
-			if normalised[i:i+len(seg)] == seg {
-				return true
-			}
+		if strings.Contains(normalised, seg) {
+			return true
 		}
 	}
 	base := filepath.Base(path)

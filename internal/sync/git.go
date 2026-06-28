@@ -17,6 +17,8 @@ package gitsync
 
 import (
 	"fmt"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/go-git/go-git/v5"
@@ -55,6 +57,37 @@ func (s *Syncer) initRepo() (*git.Repository, error) {
 		return git.PlainInit(s.VaultPath, false)
 	}
 	return repo, err
+}
+
+func (s *Syncer) remoteOptions(repo *git.Repository) (remoteName string, remoteURL string, err error) {
+	if s.Remote == "" {
+		return "", "", nil
+	}
+	if isRemoteURL(s.Remote) {
+		remoteName = "neuron"
+		remoteURL = s.Remote
+		if _, err := repo.Remote(remoteName); err == git.ErrRemoteNotFound {
+			if _, err := repo.CreateRemote(&config.RemoteConfig{
+				Name: remoteName,
+				URLs: []string{s.Remote},
+			}); err != nil {
+				return "", "", fmt.Errorf("failed to create remote: %w", err)
+			}
+		} else if err != nil {
+			return "", "", err
+		}
+		return remoteName, remoteURL, nil
+	}
+	return s.Remote, "", nil
+}
+
+func isRemoteURL(remote string) bool {
+	return strings.Contains(remote, "://") ||
+		strings.HasPrefix(remote, "git@") ||
+		strings.HasPrefix(remote, "ssh://") ||
+		filepath.IsAbs(remote) ||
+		strings.HasPrefix(remote, "./") ||
+		strings.HasPrefix(remote, "../")
 }
 
 // Sync commits local changes and optionally pushes them to the remote.
@@ -110,19 +143,15 @@ func (s *Syncer) Sync() (*SyncResult, error) {
 	}
 
 	if s.Remote != "" {
-		// Ensure remote exists
-		_, err := repo.Remote("origin")
-		if err == git.ErrRemoteNotFound {
-			_, err = repo.CreateRemote(&config.RemoteConfig{
-				Name: "origin",
-				URLs: []string{s.Remote},
-			})
-			if err != nil {
-				return res, fmt.Errorf("failed to create remote: %v", err)
-			}
+		remoteName, remoteURL, err := s.remoteOptions(repo)
+		if err != nil {
+			return res, err
 		}
 
-		pushOpts := &git.PushOptions{}
+		pushOpts := &git.PushOptions{
+			RemoteName: remoteName,
+			RemoteURL:  remoteURL,
+		}
 		if s.AuthToken != "" {
 			pushOpts.Auth = &http.BasicAuth{
 				Username: "token", // Git providers usually ignore this when using a PAT
@@ -155,7 +184,11 @@ func (s *Syncer) Pull() error {
 	if err != nil {
 		return err
 	}
-	pullOpts := &git.PullOptions{RemoteName: "origin"}
+	remoteName, remoteURL, err := s.remoteOptions(repo)
+	if err != nil {
+		return err
+	}
+	pullOpts := &git.PullOptions{RemoteName: remoteName, RemoteURL: remoteURL}
 	if s.AuthToken != "" {
 		pullOpts.Auth = &http.BasicAuth{
 			Username: "token",

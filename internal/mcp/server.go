@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -32,21 +33,34 @@ import (
 
 // NeuronMCPServer wraps the MCP server and provides handlers that interact with the vault.
 type NeuronMCPServer struct {
-	store  *notes.Store
-	index  *search.Index
-	config *config.Config
-	server *server.MCPServer
+	store    *notes.Store
+	index    *search.Index
+	config   *config.Config
+	server   *server.MCPServer
+	readOnly bool
+	auditLog string
+}
+
+type ServerOptions struct {
+	ReadOnly bool
+	AuditLog string
 }
 
 // NewServer creates a new MCP server.
 func NewServer(cfg *config.Config, store *notes.Store, index *search.Index) (*NeuronMCPServer, error) {
+	return NewServerWithOptions(cfg, store, index, ServerOptions{})
+}
+
+func NewServerWithOptions(cfg *config.Config, store *notes.Store, index *search.Index, opts ServerOptions) (*NeuronMCPServer, error) {
 	mcpServer := server.NewMCPServer("neuron", "0.1.0", server.WithResourceCapabilities(true, true), server.WithPromptCapabilities(true))
 
 	s := &NeuronMCPServer{
-		store:  store,
-		index:  index,
-		config: cfg,
-		server: mcpServer,
+		store:    store,
+		index:    index,
+		config:   cfg,
+		server:   mcpServer,
+		readOnly: opts.ReadOnly,
+		auditLog: opts.AuditLog,
 	}
 
 	s.registerTools()
@@ -58,6 +72,40 @@ func NewServer(cfg *config.Config, store *notes.Store, index *search.Index) (*Ne
 func (s *NeuronMCPServer) Start() error {
 	stdioServer := server.NewStdioServer(s.server)
 	return stdioServer.Listen(context.Background(), os.Stdin, os.Stdout)
+}
+
+func (s *NeuronMCPServer) audit(action string, allowed bool, detail string) {
+	if s.auditLog == "" {
+		return
+	}
+	entry := map[string]interface{}{
+		"time":    time.Now().UTC().Format(time.RFC3339),
+		"action":  action,
+		"allowed": allowed,
+		"detail":  detail,
+	}
+	if err := os.MkdirAll(filepath.Dir(s.auditLog), 0o700); err != nil {
+		return
+	}
+	f, err := os.OpenFile(s.auditLog, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	b, err := json.Marshal(entry)
+	if err != nil {
+		return
+	}
+	_, _ = f.Write(append(b, '\n'))
+}
+
+func (s *NeuronMCPServer) denyWrite(action, detail string) (*mcp.CallToolResult, bool) {
+	if !s.readOnly {
+		s.audit(action, true, detail)
+		return nil, false
+	}
+	s.audit(action, false, detail)
+	return mcp.NewToolResultError("MCP server is running in read-only mode"), true
 }
 
 func (s *NeuronMCPServer) registerTools() {
@@ -190,6 +238,9 @@ func (s *NeuronMCPServer) handleCreateNote(ctx context.Context, req mcp.CallTool
 	if err != nil {
 		return mcp.NewToolResultError("missing 'title'"), nil
 	}
+	if res, denied := s.denyWrite("create_note", title); denied {
+		return res, nil
+	}
 	content := req.GetString("content", "")
 	tagsStr := req.GetString("tags", "")
 
@@ -222,6 +273,9 @@ func (s *NeuronMCPServer) handleUpdateNote(ctx context.Context, req mcp.CallTool
 	idOrTitle, err := req.RequireString("id_or_title")
 	if err != nil {
 		return mcp.NewToolResultError("missing 'id_or_title'"), nil
+	}
+	if res, denied := s.denyWrite("update_note", idOrTitle); denied {
+		return res, nil
 	}
 	content, err := req.RequireString("content")
 	if err != nil {
@@ -289,6 +343,9 @@ func (s *NeuronMCPServer) handleGetDaily(ctx context.Context, req mcp.CallToolRe
 	title := "Daily " + time.Now().Format("2006-01-02")
 	note, err := s.store.Get(title)
 	if err != nil {
+		if res, denied := s.denyWrite("get_daily:create", title); denied {
+			return res, nil
+		}
 		// Create it
 		content := "## 🎯 Today's goals\n- [ ] \n\n## 📝 Notes\n\n## 🔗 Links\n"
 		note, err = s.store.Create("", title, []string{"daily"}, content)

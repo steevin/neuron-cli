@@ -24,11 +24,14 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
 	"github.com/google/uuid"
 )
+
+const maxAssetDownloadBytes = 50 << 20 // 50 MiB
 
 // ErrNoteNotFound se devuelve cuando no encontramos la nota.
 var ErrNoteNotFound = fmt.Errorf("note not found")
@@ -46,8 +49,10 @@ type Store struct {
 	VaultPath string         // Absolute path to the vault root
 	Vault     *ObsidianVault // Detected Obsidian metadata (may be non-Obsidian)
 
-	noteCache     []*Note     // in-memory cache of parsed notes (nil = dirty)
+	mu            sync.RWMutex
+	noteCache     []*Note              // in-memory cache of parsed notes (nil = dirty)
 	cacheModTimes map[string]time.Time // file path → last mod time when cached
+	cachedFileCnt int                  // total .md files at last scan; 0 means unknown
 }
 
 // NewStore inicializa el store y expande el ~ si viene en la ruta.
@@ -60,6 +65,11 @@ func NewStore(vaultPath string) (*Store, error) {
 		}
 		vaultPath = home + vaultPath[1:]
 	}
+	absVaultPath, err := filepath.Abs(vaultPath)
+	if err != nil {
+		return nil, fmt.Errorf("notes: resolving vault path %q: %w", vaultPath, err)
+	}
+	vaultPath = absVaultPath
 
 	// creamos el directorio si no existe
 	if err := os.MkdirAll(vaultPath, 0o700); err != nil {
@@ -96,8 +106,42 @@ func (s *Store) EmbedDir() string {
 // InvalidateCache marks the in-memory note cache as stale so the next
 // List call re-scans the vault from disk.
 func (s *Store) InvalidateCache() {
+	s.mu.Lock()
 	s.noteCache = nil
 	s.cacheModTimes = nil
+	s.cachedFileCnt = 0
+	s.mu.Unlock()
+}
+
+func (s *Store) vaultSubdir(folder string) (string, error) {
+	if folder == "" || folder == "." {
+		return s.VaultPath, nil
+	}
+	if filepath.IsAbs(folder) {
+		return "", fmt.Errorf("notes: folder %q must be relative to the vault", folder)
+	}
+	clean := filepath.Clean(folder)
+	if clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("notes: folder %q escapes the vault", folder)
+	}
+
+	fullPath := filepath.Join(s.VaultPath, clean)
+	rel, err := filepath.Rel(s.VaultPath, fullPath)
+	if err != nil {
+		return "", fmt.Errorf("notes: resolving folder %q: %w", folder, err)
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+		return "", fmt.Errorf("notes: folder %q escapes the vault", folder)
+	}
+	return fullPath, nil
+}
+
+func (s *Store) assetsDir() (string, error) {
+	folder := "assets"
+	if s.Vault != nil && s.Vault.Settings.AttachmentFolder != "" {
+		folder = s.Vault.Settings.AttachmentFolder
+	}
+	return s.vaultSubdir(folder)
 }
 
 // Create genera un UUID, limpia el nombre del archivo y guarda la nota nueva.
@@ -105,15 +149,13 @@ func (s *Store) Create(folder string, title string, tags []string, content strin
 	id := uuid.New().String()
 	filename := safeFilename(title) + ".md"
 
-	var dirPath string
-	if folder != "" {
-		dirPath = filepath.Join(s.VaultPath, folder)
-		// aseguramos que la subcarpeta exista
-		if err := os.MkdirAll(dirPath, 0o700); err != nil {
-			return nil, fmt.Errorf("notes: creating subdirectory %q: %w", folder, err)
-		}
-	} else {
-		dirPath = s.VaultPath
+	dirPath, err := s.vaultSubdir(folder)
+	if err != nil {
+		return nil, err
+	}
+	// aseguramos que la subcarpeta exista
+	if err := os.MkdirAll(dirPath, 0o700); err != nil {
+		return nil, fmt.Errorf("notes: creating subdirectory %q: %w", folder, err)
 	}
 
 	fullPath := filepath.Join(dirPath, filename)
@@ -156,7 +198,7 @@ func (s *Store) Create(folder string, title string, tags []string, content strin
 func (s *Store) DetectPARAFolders() []string {
 	// revisamos la raíz buscando las palabras clave del método PARA. Si no hay nada, usamos los valores por defecto numerados:
 	defaults := []string{"1. Projects", "2. Areas", "3. Resources", "4. Archive"}
-	
+
 	entries, err := os.ReadDir(s.VaultPath)
 	if err != nil {
 		return defaults
@@ -238,9 +280,9 @@ func (s *Store) Move(idOrTitle string, targetFolder string) error {
 		return err
 	}
 
-	targetDir := s.VaultPath
-	if targetFolder != "" {
-		targetDir = filepath.Join(s.VaultPath, targetFolder)
+	targetDir, err := s.vaultSubdir(targetFolder)
+	if err != nil {
+		return err
 	}
 
 	if err := os.MkdirAll(targetDir, 0o700); err != nil {
@@ -267,7 +309,6 @@ func (s *Store) Move(idOrTitle string, targetFolder string) error {
 	s.InvalidateCache()
 	return nil
 }
-
 
 // Get busca primero por UUID, luego por título y por último por nombre de archivo.
 func (s *Store) Get(idOrTitle string) (*Note, error) {
@@ -306,8 +347,11 @@ func (s *Store) Get(idOrTitle string) (*Note, error) {
 // List recorre el vault, lee los .md y devuelve los resultados filtrados y ordenados.
 // Usa un caché en memoria para evitar escanear el disco en cada llamada.
 func (s *Store) List(opts ListOptions) ([]*Note, error) {
-	if s.noteCache == nil || s.IsCacheStale() {
-		if err := s.scanAll(); err != nil {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.noteCache == nil || s.isCacheStaleLocked() {
+		if err := s.scanAllLocked(); err != nil {
 			return nil, err
 		}
 	}
@@ -329,13 +373,16 @@ func (s *Store) List(opts ListOptions) ([]*Note, error) {
 	return filtered, nil
 }
 
-// scanAll walks the vault and parses every .md file, populating the cache.
-func (s *Store) scanAll() error {
+// scanAllLocked walks the vault and parses every .md file, populating the cache.
+// The caller must hold s.mu write lock.
+func (s *Store) scanAllLocked() error {
 	var notes []*Note
 	modTimes := make(map[string]time.Time)
+	var mdCount int
 
 	err := filepath.WalkDir(s.VaultPath, func(path string, d os.DirEntry, walkErr error) error {
 		if walkErr != nil {
+			fmt.Fprintf(os.Stderr, "warning: skipping %s: %v\n", path, walkErr)
 			return nil
 		}
 
@@ -353,8 +400,11 @@ func (s *Store) scanAll() error {
 			return nil
 		}
 
+		mdCount++
+
 		note, parseErr := ParseFile(path)
 		if parseErr != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to parse %s: %v\n", path, parseErr)
 			return nil
 		}
 
@@ -376,11 +426,20 @@ func (s *Store) scanAll() error {
 
 	s.noteCache = notes
 	s.cacheModTimes = modTimes
+	s.cachedFileCnt = mdCount
 	return nil
 }
 
 // IsCacheStale checks if any .md file has been modified since the last scan.
+// Also detects new or deleted files by comparing the total .md count.
 func (s *Store) IsCacheStale() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.isCacheStaleLocked()
+}
+
+// isCacheStaleLocked is the lock-free version for callers that already hold the lock.
+func (s *Store) isCacheStaleLocked() bool {
 	if s.cacheModTimes == nil {
 		return true
 	}
@@ -390,7 +449,33 @@ func (s *Store) IsCacheStale() bool {
 			return true
 		}
 	}
+	if s.walkVaultMdCountLocked() != s.cachedFileCnt {
+		return true
+	}
 	return false
+}
+
+// walkVaultMdCountLocked counts .md files in the vault (excluding dotdirs and
+// Obsidian files). Only touches the filesystem, not Store state — safe to call
+// with or without a lock.
+func (s *Store) walkVaultMdCountLocked() int {
+	var cnt int
+	filepath.WalkDir(s.VaultPath, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			if strings.HasPrefix(d.Name(), ".") {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if strings.EqualFold(filepath.Ext(path), ".md") && !IsObsidianFile(path) {
+			cnt++
+		}
+		return nil
+	})
+	return cnt
 }
 
 // Update actualiza la fecha de modificación y reescribe el archivo.
@@ -418,7 +503,6 @@ func (s *Store) Reload(note *Note) (*Note, error) {
 	return fresh, nil
 }
 
-
 // Delete mueve la nota a la papelera en lugar de borrarla definitivamente.
 func (s *Store) Delete(idOrTitle string) error {
 	note, err := s.Get(idOrTitle)
@@ -443,6 +527,90 @@ func (s *Store) Delete(idOrTitle string) error {
 	}
 	s.InvalidateCache()
 	return nil
+}
+
+// ListTrash returns Markdown notes currently stored in the vault trash.
+func (s *Store) ListTrash() ([]*Note, error) {
+	trashDir := filepath.Join(s.VaultPath, ".trash")
+	var trashed []*Note
+
+	err := filepath.WalkDir(trashDir, func(path string, d os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			if os.IsNotExist(walkErr) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if d.IsDir() {
+			return nil
+		}
+		if !strings.EqualFold(filepath.Ext(path), ".md") {
+			return nil
+		}
+		note, err := ParseFile(path)
+		if err != nil {
+			return nil
+		}
+		if rel, err := filepath.Rel(s.VaultPath, path); err == nil {
+			note.RelPath = rel
+		}
+		trashed = append(trashed, note)
+		return nil
+	})
+	if err != nil && !os.IsNotExist(err) {
+		return nil, fmt.Errorf("notes: walking trash: %w", err)
+	}
+
+	SortNotes(trashed, "updated")
+	return trashed, nil
+}
+
+// Restore moves a note from .trash back into the vault root or target folder.
+func (s *Store) Restore(idOrTitle string, targetFolder string) (*Note, error) {
+	trashed, err := s.ListTrash()
+	if err != nil {
+		return nil, err
+	}
+
+	lowerQuery := strings.ToLower(idOrTitle)
+	var note *Note
+	for _, n := range trashed {
+		stem := strings.TrimSuffix(filepath.Base(n.Path), ".md")
+		if n.ID == idOrTitle || strings.ToLower(n.Title) == lowerQuery || strings.ToLower(stem) == lowerQuery {
+			note = n
+			break
+		}
+	}
+	if note == nil {
+		return nil, ErrNoteNotFound
+	}
+
+	targetDir, err := s.vaultSubdir(targetFolder)
+	if err != nil {
+		return nil, err
+	}
+	if err := os.MkdirAll(targetDir, 0o700); err != nil {
+		return nil, fmt.Errorf("notes: creating restore target: %w", err)
+	}
+
+	dest := filepath.Join(targetDir, filepath.Base(note.Path))
+	if _, statErr := os.Stat(dest); statErr == nil {
+		stem := strings.TrimSuffix(filepath.Base(note.Path), ".md")
+		dest = filepath.Join(targetDir, fmt.Sprintf("%s-%d.md", stem, time.Now().UnixNano()))
+	}
+	if err := os.Rename(note.Path, dest); err != nil {
+		return nil, fmt.Errorf("notes: restoring note: %w", err)
+	}
+
+	restored, err := ParseFile(dest)
+	if err != nil {
+		return nil, err
+	}
+	if rel, err := filepath.Rel(s.VaultPath, dest); err == nil {
+		restored.RelPath = rel
+	}
+	s.InvalidateCache()
+	return restored, nil
 }
 
 // Count cuenta cuántos archivos .md tenemos.
@@ -546,7 +714,10 @@ func (s *Store) AttachAsset(noteID string, pathOrURL string) error {
 		return err
 	}
 
-	assetsDir := filepath.Join(s.VaultPath, "assets")
+	assetsDir, err := s.assetsDir()
+	if err != nil {
+		return err
+	}
 	if err := os.MkdirAll(assetsDir, 0o700); err != nil {
 		return fmt.Errorf("notes: creating assets directory: %w", err)
 	}
@@ -562,10 +733,10 @@ func (s *Store) AttachAsset(noteID string, pathOrURL string) error {
 			return fmt.Errorf("invalid URL: %w", err)
 		}
 		filename = filepath.Base(parsed.Path)
-		if filename == "" || filename == "/" {
+		if filename == "" || filename == "/" || filename == "." {
 			filename = fmt.Sprintf("download-%d.jpg", time.Now().UnixNano())
 		}
-		
+
 		// Ensure unique filename
 		localDest = filepath.Join(assetsDir, filename)
 		if _, err := os.Stat(localDest); err == nil {
@@ -573,7 +744,8 @@ func (s *Store) AttachAsset(noteID string, pathOrURL string) error {
 			localDest = filepath.Join(assetsDir, filename)
 		}
 
-		resp, err := http.Get(pathOrURL)
+		client := &http.Client{Timeout: 30 * time.Second}
+		resp, err := client.Get(pathOrURL)
 		if err != nil {
 			return fmt.Errorf("downloading asset: %w", err)
 		}
@@ -582,6 +754,9 @@ func (s *Store) AttachAsset(noteID string, pathOrURL string) error {
 		if resp.StatusCode != http.StatusOK {
 			return fmt.Errorf("bad status: %s", resp.Status)
 		}
+		if resp.ContentLength > maxAssetDownloadBytes {
+			return fmt.Errorf("asset too large: %d bytes exceeds %d byte limit", resp.ContentLength, maxAssetDownloadBytes)
+		}
 
 		out, err := os.Create(localDest)
 		if err != nil {
@@ -589,18 +764,22 @@ func (s *Store) AttachAsset(noteID string, pathOrURL string) error {
 		}
 		defer out.Close()
 
-		_, err = io.Copy(out, resp.Body)
+		written, err := io.Copy(out, io.LimitReader(resp.Body, maxAssetDownloadBytes+1))
 		if err != nil {
 			return fmt.Errorf("saving asset: %w", err)
+		}
+		if written > maxAssetDownloadBytes {
+			_ = os.Remove(localDest)
+			return fmt.Errorf("asset too large: exceeds %d byte limit", maxAssetDownloadBytes)
 		}
 	} else {
 		// Local file path
 		cleanPath := strings.TrimPrefix(pathOrURL, "file://")
-		
-		// If path has spaces but is passed directly from D&D, it might have quotes or escaped spaces. 
+
+		// If path has spaces but is passed directly from D&D, it might have quotes or escaped spaces.
 		cleanPath = strings.Trim(cleanPath, "'\" ")
 		cleanPath = strings.ReplaceAll(cleanPath, "\\ ", " ") // Fix macOS Terminal drag and drop
-		
+
 		_, err := os.Stat(cleanPath)
 		if err != nil {
 			return fmt.Errorf("local file not found: %w", err)
@@ -631,11 +810,16 @@ func (s *Store) AttachAsset(noteID string, pathOrURL string) error {
 		}
 	}
 
-	// Append to note
+	// Append to note with path relative to note's directory
 	ext := strings.ToLower(filepath.Ext(filename))
 	isImage := ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".gif" || ext == ".webp" || ext == ".svg" || ext == ".avif"
-	
-	mdPath := filepath.ToSlash(filepath.Join("assets", filename))
+
+	noteDir := filepath.Dir(note.Path)
+	relPath, err := filepath.Rel(noteDir, filepath.Join(assetsDir, filename))
+	if err != nil {
+		relPath = filepath.Join("assets", filename)
+	}
+	mdPath := filepath.ToSlash(relPath)
 	var appendText string
 	if isImage {
 		appendText = fmt.Sprintf("\n\n![%s](%s)", filename, mdPath)

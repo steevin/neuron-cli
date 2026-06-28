@@ -135,7 +135,7 @@ type Model struct {
 	pendingCodeTitles []string // Display titles for focusCodeSelect
 	codeSelectIdx     int      // current selection for focusCodeSelect
 
-	appVersion      string
+	appVersion string
 }
 
 type keyMap struct {
@@ -175,7 +175,7 @@ var keys = keyMap{
 
 // allPaletteCommands is the full list for fuzzy suggestions.
 var allPaletteCommands = []string{
-	"/add", "/today", "/sync", "/stats", "/open", "/edit", "/rm", "/move", "/theme", "/help", "/quit", "/copy", "/attach", "/links",
+	"/add", "/today", "/sync", "/stats", "/doctor", "/health", "/backlinks", "/orphan", "/open", "/edit", "/rm", "/move", "/theme", "/help", "/quit", "/copy", "/attach", "/links",
 }
 
 // New constructs a Model from the provided configuration.
@@ -1308,11 +1308,60 @@ func (m *Model) handlePaletteCommand(cmdStr string) tea.Cmd {
 		m.isSuccess = false
 		return nil
 
+	case "/doctor", "/health":
+		graph := notes.BuildGraph(m.allNotes)
+		orphans := graph.Orphans()
+		broken := tuiBrokenLinkCount(m.allNotes, graph)
+		m.statusMsg = fmt.Sprintf("Health: %d notes · %d tags · %d orphan · %d broken links", len(m.allNotes), m.countUniqueTags(), len(orphans), broken)
+		m.isSuccess = broken == 0
+		return nil
+
+	case "/backlinks":
+		note := m.sidebar.SelectedNote()
+		if note == nil {
+			m.statusMsg = "✗ No note selected"
+			m.isSuccess = false
+			return nil
+		}
+		graph := notes.BuildGraph(m.allNotes)
+		node := graph.Nodes[note.Title]
+		if node == nil || len(node.Backlinks) == 0 {
+			m.statusMsg = "No backlinks for " + note.Title
+			m.isSuccess = false
+			return nil
+		}
+		preview := node.Backlinks
+		if len(preview) > 3 {
+			preview = preview[:3]
+		}
+		m.statusMsg = fmt.Sprintf("Backlinks (%d): %s", len(node.Backlinks), strings.Join(preview, ", "))
+		m.isSuccess = true
+		return nil
+
+	case "/orphan":
+		graph := notes.BuildGraph(m.allNotes)
+		orphans := graph.Orphans()
+		if len(orphans) == 0 {
+			m.statusMsg = "No orphan notes"
+			m.isSuccess = true
+			return nil
+		}
+		var titles []string
+		for i, node := range orphans {
+			if i >= 3 {
+				break
+			}
+			titles = append(titles, node.Title)
+		}
+		m.statusMsg = fmt.Sprintf("Orphans (%d): %s", len(orphans), strings.Join(titles, ", "))
+		m.isSuccess = false
+		return nil
+
 	case "/open", "/o":
 		go func() {
-			_ = exec.Command("open", "--", m.cfg.VaultPath).Run()
+			_ = openExternal(m.cfg.VaultPath).Run()
 		}()
-		m.statusMsg = "✓ Opened vault in Finder"
+		m.statusMsg = "✓ Opened vault"
 		m.isSuccess = true
 		return nil
 
@@ -1360,18 +1409,18 @@ func (m *Model) handlePaletteCommand(cmdStr string) tea.Cmd {
 		arg := strings.Join(parts[1:], " ")
 		m.statusMsg = "Attaching asset..."
 		m.isSuccess = false
-		
+
 		return func() tea.Msg {
 			note := m.sidebar.SelectedNote()
 			if note == nil {
 				return errMsg{err: fmt.Errorf("no note selected")}
 			}
-			
+
 			err := m.store.AttachAsset(note.ID, arg)
 			if err != nil {
 				return errMsg{err: err}
 			}
-			
+
 			updatedNote, err := m.store.Get(note.ID)
 			if err != nil {
 				return errMsg{err: err}
@@ -1387,16 +1436,16 @@ func (m *Model) handlePaletteCommand(cmdStr string) tea.Cmd {
 			m.isSuccess = false
 			return nil
 		}
-		
+
 		re := regexp.MustCompile(`(https?://[^\s)\]]+|file://[^\s)\]]+)|\[(.*?)\]\(([^)]+)\)`)
 		matches := re.FindAllStringSubmatch(note.RawContent, -1)
-		
+
 		if len(matches) == 0 {
 			m.statusMsg = "✗ No links found in note"
 			m.isSuccess = false
 			return nil
 		}
-		
+
 		var links []string
 		var titles []string
 		for _, m := range matches {
@@ -1566,19 +1615,75 @@ func (m *Model) openInEditor() tea.Cmd {
 		}
 	}
 
-	editorParts := strings.Fields(editor)
-	if len(editorParts) > 0 {
-		editor = editorParts[0]
-	} else {
-		editor = "vi"
+	editorParts, err := splitCommand(editor)
+	if err != nil {
+		m.statusMsg = "✗ " + err.Error()
+		m.isSuccess = false
+		return nil
 	}
+	if len(editorParts) == 0 {
+		editorParts = []string{"vi"}
+	}
+	args := append(editorParts[1:], note.Path)
 
-	return tea.ExecProcess(exec.Command(editor, note.Path), func(err error) tea.Msg {
+	return tea.ExecProcess(exec.Command(editorParts[0], args...), func(err error) tea.Msg {
 		if err != nil {
 			return errMsg{err: fmt.Errorf("editor: %w", err)}
 		}
 		return editorFinishedMsg{noteID: note.ID}
 	})
+}
+
+func splitCommand(input string) ([]string, error) {
+	var parts []string
+	var current strings.Builder
+	var quote rune
+	escaped := false
+
+	for _, r := range strings.TrimSpace(input) {
+		if escaped {
+			current.WriteRune(r)
+			escaped = false
+			continue
+		}
+		if r == '\\' {
+			escaped = true
+			continue
+		}
+		if quote != 0 {
+			if r == quote {
+				quote = 0
+			} else {
+				current.WriteRune(r)
+			}
+			continue
+		}
+		if r == '\'' || r == '"' {
+			quote = r
+			continue
+		}
+		if r == ';' || r == '&' || r == '|' || r == '<' || r == '>' || r == '`' {
+			return nil, fmt.Errorf("editor command contains unsupported shell metacharacter %q", r)
+		}
+		if r == ' ' || r == '\t' || r == '\n' {
+			if current.Len() > 0 {
+				parts = append(parts, current.String())
+				current.Reset()
+			}
+			continue
+		}
+		current.WriteRune(r)
+	}
+	if escaped {
+		current.WriteRune('\\')
+	}
+	if quote != 0 {
+		return nil, fmt.Errorf("editor command has unterminated quote")
+	}
+	if current.Len() > 0 {
+		parts = append(parts, current.String())
+	}
+	return parts, nil
 }
 
 // syncCmd triggers a git sync and reports the result via statusMsg or errMsg.
@@ -1633,6 +1738,18 @@ func (m Model) renderGraphSummary() string {
 		totalLinks += len(n.Links)
 	}
 	return fmt.Sprintf("Knowledge graph: %d nodes · %d edges", len(m.allNotes), totalLinks)
+}
+
+func tuiBrokenLinkCount(noteList []*notes.Note, graph *notes.Graph) int {
+	var count int
+	for _, n := range noteList {
+		for _, target := range n.Links {
+			if _, ok := graph.Nodes[target]; !ok {
+				count++
+			}
+		}
+	}
+	return count
 }
 
 // countUniqueTags returns the number of distinct tags across all notes.
@@ -1895,7 +2012,9 @@ func (m Model) renderRightColumn(height, width int) string {
 
 	// Join all right column elements vertically with spacing
 	return lipgloss.JoinVertical(lipgloss.Left, statsCard, quickCard, licenseCard)
-}// openLink resolves the given link and opens it using the OS default application.
+}
+
+// openLink resolves the given link and opens it using the OS default application.
 func (m *Model) openLink(link string) {
 	note := m.sidebar.SelectedNote()
 	if note == nil {
@@ -1925,19 +2044,21 @@ func (m *Model) openLink(link string) {
 		}
 	}
 	go func() {
-		var cmd *exec.Cmd
-		switch runtime.GOOS {
-		case "darwin":
-			cmd = exec.Command("open", link)
-		case "windows":
-			cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", link)
-		default: // linux, freebsd, etc.
-			cmd = exec.Command("xdg-open", link)
-		}
-		_ = cmd.Run()
+		_ = openExternal(link).Run()
 	}()
 	m.statusMsg = "✓ Opened link: " + link
 	m.isSuccess = true
+}
+
+func openExternal(target string) *exec.Cmd {
+	switch runtime.GOOS {
+	case "darwin":
+		return exec.Command("open", target)
+	case "windows":
+		return exec.Command("rundll32", "url.dll,FileProtocolHandler", target)
+	default: // linux, freebsd, etc.
+		return exec.Command("xdg-open", target)
+	}
 }
 
 func (m *Model) extractCodeBlocks(note *notes.Note) tea.Cmd {
@@ -1945,11 +2066,11 @@ func (m *Model) extractCodeBlocks(note *notes.Note) tea.Cmd {
 		// regex to find all ``` language \n code ``` blocks
 		re := regexp.MustCompile("(?s)```([a-zA-Z0-9_+-]*)\\n(.*?)```")
 		matches := re.FindAllStringSubmatch(note.RawContent, -1)
-		
+
 		if len(matches) == 0 {
 			return statusMsg{msg: "✗ No code blocks found in note"}
 		}
-		
+
 		if len(matches) == 1 {
 			code := strings.TrimSpace(matches[0][2])
 			if err := clipboard.WriteAll(code); err != nil {
@@ -1957,14 +2078,14 @@ func (m *Model) extractCodeBlocks(note *notes.Note) tea.Cmd {
 			}
 			return successMsg{msg: "📋 Copied code block to clipboard"}
 		}
-		
+
 		var blocks []string
 		var titles []string
 		for _, m := range matches {
 			lang := m[1]
 			code := strings.TrimSpace(m[2])
 			blocks = append(blocks, code)
-			
+
 			preview := strings.ReplaceAll(code, "\n", " ")
 			if len([]rune(preview)) > 30 {
 				preview = string([]rune(preview)[:30]) + "…"

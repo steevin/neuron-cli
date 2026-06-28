@@ -89,7 +89,7 @@ La barra de ruta (breadcrumbs) en la parte inferior de la TUI te muestra la ubic
 
 #### Captura ideas al instante (Portapapeles)
 * **Pegado instantáneo (`ctrl+v`):** Presiona `ctrl+v` sobre cualquier nota de la lista para añadir el contenido de tu portapapeles directamente al final del archivo en el disco. Ideal para guardar fragmentos web o logs sin abrir un editor.
-* **Gestión inteligente de recursos:** Si tu portapapeles contiene la URL de una imagen o una ruta local, Neuron la copia automáticamente a la carpeta `assets/` de tu bóveda y crea el enlace Markdown por ti.
+* **Gestión inteligente de recursos:** Si tu portapapeles contiene la URL de una imagen o una ruta local, Neuron la copia a la carpeta de adjuntos configurada en Obsidian cuando exista, o a `assets/` en caso contrario, y crea el enlace Markdown por ti. Las descargas remotas tienen un límite de 50 MiB.
 * **Pegado en bloque (Bracketed Paste):** Pega cualquier texto largo al ingresar el título de una nueva nota; Neuron usará la primera línea como título y el resto como contenido del archivo.
 
 #### Búsqueda Dual
@@ -107,6 +107,12 @@ neuron today                                        # Crea automáticamente la n
 * **Wikilinks al estilo Obsidian:** Soporte completo para extracción e indexación de enlaces `[[wikilink]]`.
 * **Etiquetas:** Los `#tags` dentro del texto de tus notas se indexan de forma automática para facilitar las búsquedas.
 * **Resumen del Grafo:** Presiona `g` en la TUI para ver al instante el recuento de notas (nodos) y conexiones (enlaces) de tu grafo de conocimiento.
+* **Mantenimiento del grafo:** Usa `neuron backlinks`, `neuron orphan` y `neuron doctor` para encontrar backlinks, notas aisladas y wikilinks rotos.
+
+#### Mantén sana tu bóveda
+* **Revisión Doctor:** `neuron doctor` reporta cantidad de notas/tags, notas huérfanas, enlaces rotos, papelera, estado de Git, detección de Obsidian y conectividad de IA.
+* **Timeline:** `neuron timeline` muestra notas actualizadas recientemente, o historial de creación con `--created`.
+* **Restaurar papelera:** Las notas eliminadas van a `.trash`; usa `neuron restore --list` y `neuron restore <nota>` para recuperarlas.
 
 #### Formularios interactivos
 Si olvidas pasar algún parámetro en la consola, Neuron no fallará con un error críptico. Te guiará a través de bonitos formularios interactivos construidos con `huh` para crear notas, elegir carpetas o confirmar acciones.
@@ -163,13 +169,16 @@ Busca comandos en cualquier momento desde la TUI presionando `/`:
 | `/today` | Abrir o crear la nota diaria de hoy |
 | `/edit`, `/e` | Abrir la nota seleccionada en `$EDITOR` |
 | `/copy`, `/c` | Copiar la nota actual al portapapeles |
-| `/attach <ruta_o_url>`| Descargar o copiar imagen a assets/ y enlazarla en la nota |
+| `/attach <ruta_o_url>`| Descargar o copiar un recurso y enlazarlo en la nota |
 | `/links`, `/l` | Abrir el primer enlace de la nota en tu navegador |
 | `/move <carpeta>` | Mover la nota seleccionada a una carpeta PARA |
 | `/rm` | Eliminar la nota seleccionada |
 | `/sync`, `/s` | Sincronizar con Git (pull y push opcional) |
 | `/stats` | Mostrar estadísticas de la bóveda |
-| `/open`, `/o` | Revelar la bóveda en Finder |
+| `/doctor`, `/health` | Mostrar salud rápida de la bóveda en la barra de estado |
+| `/backlinks` | Mostrar backlinks de la nota seleccionada |
+| `/orphan` | Mostrar conteo y ejemplos de notas huérfanas |
+| `/open`, `/o` | Abrir la bóveda en el explorador de archivos del sistema |
 | `/theme dark\|light` | Cambiar el tema visual de la TUI en tiempo real |
 | `/quit` | Salir de Neuron |
 
@@ -193,12 +202,22 @@ neuron list -q "kubernetes"              # Búsqueda semántica o por texto plan
 neuron move "standup notes" projects    # Mueve una nota a tu carpeta de Proyectos
 neuron attach "standup notes" ./img.png # Adjunta una imagen o archivo local a una nota
 neuron links "standup notes"             # Extrae y abre enlaces o imágenes en el navegador
+neuron backlinks "standup notes"         # Muestra notas que enlazan a una nota
+neuron orphan                            # Lista notas sin enlaces ni backlinks
+neuron timeline --created                # Timeline por fecha de creación
+neuron restore --list                    # Lista notas en .trash
+neuron restore "old note" --folder "4. Archive" # Restaura una nota eliminada
+neuron doctor                            # Revisión de salud de la bóveda
 neuron sync --pull                       # Sincroniza con git (pull + push)
+neuron sync --remote backup              # Sincroniza usando un remoto Git por nombre
+neuron sync --remote https://github.com/me/notes.git # Sincroniza usando una URL solo en esta ejecución
 neuron stats                             # Recuento de notas y etiquetas
-neuron config set editor nvim            # Cambia el editor predeterminado
+neuron config set editor "code -w"        # Cambia el editor predeterminado (soporta argumentos)
 neuron config set theme dark             # Configura el tema permanente
 neuron mcp                               # Inicia el servidor MCP
 ```
+
+Las notas creadas o movidas con Neuron deben quedarse dentro de la bóveda configurada. Rutas relativas como `../fuera` se rechazan para proteger tu sistema de archivos.
 
 ---
 
@@ -216,11 +235,18 @@ Neuron expone tu bóveda de notas como un servidor [Model Context Protocol (MCP)
 
 Una vez configurado, podrás pedirle a tu IA que busque, cree, resuma o mueva notas de tu bóveda sin necesidad de salir del chat.
 
+Para dar acceso más seguro a agentes, ejecuta MCP en modo solo lectura o guarda una auditoría:
+
+```bash
+neuron mcp --read-only
+neuron mcp --audit-log ~/.local/state/neuron/mcp-audit.jsonl
+```
+
 ---
 
 ### Formato de la Bóveda
 
-Neuron utiliza Markdown puro con YAML frontmatter (exactamente igual que Obsidian). Apunta Neuron a tu directorio actual de Obsidian y funcionará de inmediato.
+Neuron utiliza Markdown puro con YAML frontmatter (exactamente igual que Obsidian). Apunta Neuron a tu directorio actual de Obsidian y funcionará de inmediato. Neuron también lee la carpeta de adjuntos de `.obsidian/app.json` al guardar archivos adjuntos.
 
 ```markdown
 ---

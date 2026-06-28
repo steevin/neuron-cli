@@ -69,6 +69,68 @@ func TestStoreCreateAndMove(t *testing.T) {
 	}
 }
 
+func TestStoreRejectsFoldersOutsideVault(t *testing.T) {
+	dir := t.TempDir()
+	store, err := NewStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := store.Create("../outside", "Escape", nil, ""); err == nil {
+		t.Fatal("expected Create to reject folder escaping vault")
+	}
+	if _, err := os.Stat(filepath.Join(filepath.Dir(dir), "outside")); err == nil {
+		t.Fatal("Create wrote outside the vault")
+	}
+
+	note, err := store.Create("", "Safe", nil, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Move(note.ID, "../outside"); err == nil {
+		t.Fatal("expected Move to reject folder escaping vault")
+	}
+}
+
+func TestStoreUsesObsidianAttachmentFolder(t *testing.T) {
+	dir := t.TempDir()
+	obsidianDir := filepath.Join(dir, ".obsidian")
+	if err := os.MkdirAll(obsidianDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(obsidianDir, "app.json"), []byte(`{"attachmentFolderPath":"media"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	store, err := NewStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	note, err := store.Create("", "With Asset", nil, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	source := filepath.Join(dir, "source.png")
+	if err := os.WriteFile(source, []byte("png"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.AttachAsset(note.ID, source); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "media", "source.png")); err != nil {
+		t.Fatalf("expected attachment in Obsidian folder: %v", err)
+	}
+
+	fresh, err := store.Get(note.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(fresh.Content, "media/source.png") {
+		t.Fatalf("expected note content to link media/source.png, got %q", fresh.Content)
+	}
+}
+
 func TestStoreDetectPARAFolders(t *testing.T) {
 	tmpDir, err := os.MkdirTemp("", "neuron-test-vault-detect-*")
 	if err != nil {
@@ -368,6 +430,50 @@ func TestStoreDelete(t *testing.T) {
 	notes, _ := store.List(ListOptions{})
 	if len(notes) != 0 {
 		t.Errorf("expected 0 notes after delete, got %d", len(notes))
+	}
+}
+
+func TestStoreRestore(t *testing.T) {
+	dir := t.TempDir()
+	store, err := NewStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	note, err := store.Create("", "Restore Me", nil, "hello")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Delete(note.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	trashed, err := store.ListTrash()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(trashed) != 1 {
+		t.Fatalf("expected 1 trashed note, got %d", len(trashed))
+	}
+
+	restored, err := store.Restore("Restore Me", "1. Projects")
+	if err != nil {
+		t.Fatal(err)
+	}
+	expectedRelPath := filepath.Join("1. Projects", "restore-me.md")
+	if restored.RelPath != expectedRelPath {
+		t.Fatalf("expected restored path %q, got %q", expectedRelPath, restored.RelPath)
+	}
+	if _, err := os.Stat(filepath.Join(dir, expectedRelPath)); err != nil {
+		t.Fatalf("expected restored file: %v", err)
+	}
+
+	trashed, err = store.ListTrash()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(trashed) != 0 {
+		t.Fatalf("expected empty trash, got %d", len(trashed))
 	}
 }
 
