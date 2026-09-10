@@ -30,9 +30,9 @@ Just a quick heads-up: since Neuron CLI is licensed under GPL v3, any code you s
 
 ## Quick Dev Guide
 
-You'll need Go (1.21+) installed.
+You'll need Go 1.26.3 or newer (see `go.mod`) installed.
 
-* **Build the binary:** `make build` (or `go build -o bin/neuron cmd/neuron/*.go`)
+* **Build the binary:** `make build` (or `go build -o bin/neuron ./cmd/neuron`)
 * **Run unit tests:** `go test ./...`
 
 We try to stick to standard Go idioms and formatting. If you're unsure about how to implement something, open a draft PR and we can work through it together in the comments!

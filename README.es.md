@@ -1,316 +1,395 @@
 <div align="center">
-<img src="docs/assets/logo.png" alt="Neuron CLI Logo" width="200" />
-<h1>Neuron CLI</h1>
 
-**Tus notas son texto plano. ¿Por qué gestionarlas tiene que sentirse tan pesado?**
+<img src="docs/assets/logo.png" alt="Neuron CLI" width="140" />
 
-*Si te gusta Neuron CLI, ¡considera apoyarlo con una ⭐ en GitHub!*
+# Neuron CLI
 
-[English](README.md) | [Español]
+**Captura ideas. Encuentra tu siguiente tarea. Retoma donde te quedaste.**
+
+Un espacio de trabajo Markdown local para tu terminal, compatible con Obsidian.
+
+**Local primero** · **Control por teclado** · **Archivos Markdown** · **IA y MCP opcionales**
+
+[Inicio rápido](#inicio-rápido) · [Flujos de trabajo](#flujos-de-trabajo) · [Comandos](#referencia-de-comandos) · [English](README.md)
+
 </div>
 
-<br>
-
-> Neuron es un gestor de notas local-first y compatible con Obsidian, diseñado para la terminal. Mantiene tu bóveda de Markdown exactamente donde está: sin migraciones, sin bases de datos propietarias y sin suscripciones en la nube. Solo acceso ultrarrápido y guiado por teclado a tus pensamientos desde cualquier parte de tu shell.
-
 ---
 
-### ¿Por qué otro gestor de notas?
+| Captura | Avanza | Retoma |
+| :--- | :--- | :--- |
+| Guarda una idea en **Inbox** sin abrir un editor. | Revisa tus **tareas** Markdown y el resumen diario. | Abre el **contexto del proyecto** vinculado a tu repositorio. |
+| `neuron capture "Una idea"` | `neuron dashboard` | `neuron project` |
 
-Si eres como yo, pasas el día en la terminal y guardas tus notas en archivos Markdown planos. Pero la mayoría de herramientas de notas se sienten demasiado pesadas: requieren interfaces llenas de clics, corren sobre frameworks Electron que consumen recursos, o intentan amarrar tus datos a una suscripción de sincronización en la nube.
+Tu bóveda sigue siendo una carpeta de archivos Markdown. Edita las mismas notas
+con Neuron, Obsidian o tu editor favorito. Los flujos principales funcionan
+localmente; la IA, los adjuntos remotos y los remotos Git son opcionales.
 
-Neuron está construido de otra manera:
-* **Cero bloqueo de datos (Lock-in):** Trabaja directamente con tu directorio local de archivos Markdown. Puedes abrirlos en Obsidian, VS Code o Vim en cualquier momento.
-* **Velocidad sin fricciones:** Abre, busca, crea y organiza notas en milisegundos usando atajos de teclado optimizados.
-* **Listo para IA:** Realiza consultas a tu bóveda usando inteligencia artificial local (vía Ollama) o expón tus notas a agentes de IA mediante el servidor integrado de Model Context Protocol (MCP).
+> **Versión en desarrollo:** los comandos de productividad están implementados en
+> este repositorio. El paquete publicado puede ir por detrás. Compila esta copia
+> con `go build -o bin/neuron ./cmd/neuron` y usa `./bin/neuron` en lugar de `neuron`.
 
----
-
-### ¿Por qué Neuron? (Filosofía)
-
-* **El teclado manda:** Tus manos nunca deberían dejar la fila inicial del teclado (home row). Cada acción —desde buscar notas hasta mover carpetas y copiar bloques de código— está a un atajo de distancia.
-* **Privacidad por defecto:** Tus pensamientos son tuyos. Neuron funciona 100% offline. No te rastrea, no sube tus notas a internet y no requiere que crees una cuenta.
-* **Libertad de formato:** Creemos que Markdown plano con frontmatter YAML estándar es la mejor manera de ser dueño de tus notas. Si mañana decides dejar de usar Neuron, tus notas seguirán siendo simples archivos de texto legibles por cualquier editor.
-
----
-
-### Inicio Rápido
-
-Ponte en marcha con solo tres comandos:
-
-1. **Instala Neuron:**
-   ```bash
-   brew install steevin/tap/neuron
-   ```
-2. **Inicializa tu Bóveda:**
-   ```bash
-   neuron init
-   ```
-   *Apunta Neuron a un directorio existente de Obsidian o crea una bóveda desde cero.*
-3. **Inicia la TUI:**
-   ```bash
-   neuron
-   ```
-   *Presiona `?` dentro de la interfaz para ver todos los atajos disponibles.*
-
----
-
-### Instalación
-
-Opciones detalladas para instalar Neuron:
+## Inicio rápido
 
 ```bash
-# Homebrew (macOS y Linux)
 brew install steevin/tap/neuron
-
-# Binario mediante curl
-curl -sSfL https://github.com/steevin/neuron-cli/releases/latest/download/neuron_$(uname -s)_$(uname -m).tar.gz | tar -xz -C /usr/local/bin neuron
-
-# Go (requiere Go instalado)
-go install github.com/steevin/neuron-cli@latest
-
-# Desde el código fuente
-git clone https://github.com/steevin/neuron-cli && cd neuron-cli && make build
+neuron init
+neuron
 ```
 
----
+Elige una bóveda existente o crea una durante la configuración. En la interfaz
+de terminal (TUI), pulsa **`?`** para ver atajos, **`/`** para la paleta y **`e`** para editar.
 
-### Características
+<details>
+<summary><strong>Otras opciones de instalación y actualización</strong></summary>
 
-#### Organiza sin pensar (PARA)
-Neuron entiende la metodología **Projects · Areas · Resources · Archive** (PARA) de manera nativa. Escanea las carpetas de tu bóveda y te ayuda a mantener el orden sin interrumpir tu flujo de trabajo:
-* **Selector de carpetas inteligente:** Al crear una nota (`n` o `neuron add`), un menú interactivo te pide elegir la carpeta de destino. Olvídate de acumular notas sueltas en la raíz de la bóveda.
-* **Navegación fluida:** Muévete entre carpetas usando `← →` / `h l` o `↑ ↓` / `j k`. Presiona `Enter` para guardar o `Esc` para cancelar.
-* **Movimiento rápido:** Usa `neuron move` o el comando `/move` en la TUI para reubicar cualquier nota al instante.
-* *Bóvedas planas:* Si prefieres no usar el método PARA, el selector de carpetas se hace a un lado automáticamente.
+**Desde el código fuente** — requiere Go 1.26.3 o posterior, según `go.mod`:
 
-#### Ubicación siempre visible (Breadcrumbs)
-La barra de ruta (breadcrumbs) en la parte inferior de la TUI te muestra la ubicación exacta del archivo seleccionado (por ejemplo, `📂 1. Projects` o `📂 2. Areas/Finance`) mientras navegas por la lista.
-
-#### Captura ideas al instante (Portapapeles)
-* **Pegado instantáneo (`ctrl+v`):** Presiona `ctrl+v` sobre cualquier nota de la lista para añadir el contenido de tu portapapeles directamente al final del archivo en el disco. Ideal para guardar fragmentos web o logs sin abrir un editor.
-* **Gestión inteligente de recursos:** Si tu portapapeles contiene la URL de una imagen o una ruta local, Neuron la copia a la carpeta de adjuntos configurada en Obsidian cuando exista, o a `assets/` en caso contrario, y crea el enlace Markdown por ti. Las descargas remotas tienen un límite de 50 MiB.
-* **Pegado en bloque (Bracketed Paste):** Pega cualquier texto largo al ingresar el título de una nueva nota; Neuron usará la primera línea como título y el resto como contenido del archivo.
-
-#### Búsqueda Dual
-* **Búsqueda BM25:** Búsqueda clásica por palabras clave que responde tan rápido como escribes.
-* **Búsqueda Semántica / IA:** Conecta Ollama en tu configuración para consultar tus notas por conceptos e ideas en lugar de palabras exactas (por ejemplo: `neuron list -q "muestrame cosas relacionadas con mi presupuesto"`).
-
-#### Plantillas que te ahorran teclear
-No escribas el frontmatter a mano. Crea plantillas reutilizables y úsalas al vuelo:
 ```bash
-neuron add "2025-06-01 Standup" --template standup
-neuron today                                        # Crea automáticamente la nota diaria usando tu plantilla personalizada
+git clone https://github.com/steevin/neuron-cli.git
+cd neuron-cli
+go build -o bin/neuron ./cmd/neuron
+./bin/neuron init
 ```
 
-#### Conecta tus ideas
-* **Wikilinks al estilo Obsidian:** Soporte completo para extracción e indexación de enlaces `[[wikilink]]`.
-* **Etiquetas:** Los `#tags` dentro del texto de tus notas se indexan de forma automática para facilitar las búsquedas.
-* **Resumen del Grafo:** Presiona `g` en la TUI para ver al instante el recuento de notas (nodos) y conexiones (enlaces) de tu grafo de conocimiento.
-* **Mantenimiento del grafo:** Usa `neuron backlinks`, `neuron orphan` y `neuron doctor` para encontrar backlinks, notas aisladas y wikilinks rotos.
+**Con Go** — instala el comando publicado en el directorio de binarios de Go:
 
-#### Mantén sana tu bóveda
-* **Revisión Doctor:** `neuron doctor` reporta cantidad de notas/tags, notas huérfanas, enlaces rotos, papelera, estado de Git, detección de Obsidian y conectividad de IA.
-* **Timeline:** `neuron timeline` muestra notas actualizadas recientemente, o historial de creación con `--created`.
-* **Restaurar papelera:** Las notas eliminadas van a `.trash`; usa `neuron restore --list` y `neuron restore <nota>` para recuperarlas.
+```bash
+go install github.com/steevin/neuron-cli/cmd/neuron@latest
+```
 
-#### Formularios interactivos
-Si olvidas pasar algún parámetro en la consola, Neuron no fallará con un error críptico. Te guiará a través de bonitos formularios interactivos construidos con `huh` para crear notas, elegir carpetas o confirmar acciones.
+**Binarios:** elige tu sistema y arquitectura en la
+[página de releases](https://github.com/steevin/neuron-cli/releases).
+Los archivos siguen el formato `neuron_<version>_<os>_<arch>.tar.gz`
+(`.zip` en Windows); los releases incluyen sumas de verificación.
 
-#### Temas
-Alterna entre los temas oscuro (Tokyo Night) y claro (GitHub) en tiempo real usando el comando `/theme` en la TUI, o configúralo de forma permanente en los ajustes.
+**Actualizar:** usa `brew upgrade steevin/tap/neuron`, repite la instalación con
+Go o descarga un release más reciente. Las compilaciones locales deben
+reconstruirse después de actualizar el código.
 
----
+</details>
 
-### Atajos de la TUI
+## Flujos de trabajo
 
-Navega por Neuron rápidamente con estos atajos de teclado:
+```text
+Captura → Revisa Inbox → Avanza con tus tareas → Retoma tu proyecto
+                         neuron dashboard
+```
+
+### 1 · Captura ahora, organiza después
+
+```bash
+neuron capture "Investigar timeout de la API"
+printf 'Revisar API\n- [ ] Reproducir el timeout\n' | neuron capture
+neuron inbox
+neuron inbox file "Inbox/revisar-api.md" "1. Projects"
+```
+
+La captura escribe en `Inbox/` sin formularios ni editor. La primera línea sirve
+como título y todo el texto se conserva en el cuerpo. El comando muestra la ruta
+guardada; repetir un título crea otra nota. Usa la ruta de `neuron inbox` para
+clasificar una nota en su carpeta de destino.
+
+### 2 · Trabaja con las tareas en sus notas
+
+```bash
+neuron tasks
+neuron tasks --all --folder "1. Projects"
+```
+
+Las tareas se extraen de casillas Markdown como `- [ ] Reproducir el timeout`.
+Cada resultado muestra la ruta relativa a la bóveda y la línea real del archivo.
+
+```bash
+# Sustituye 10 por la línea que muestre neuron tasks.
+neuron tasks done "1. Projects/revisar-api.md" 10
+neuron tasks reopen "1. Projects/revisar-api.md" 10
+neuron tasks open "1. Projects/revisar-api.md" 10
+```
+
+Completar cambia únicamente la casilla. Se excluyen tareas vacías, frontmatter
+y ejemplos dentro de bloques de código cercados. `tasks open` abre la nota
+completa en tu editor. Después de editarla, vuelve a listar las tareas para
+obtener los números de línea actuales.
+
+### 3 · Empieza con un resumen diario
+
+```bash
+neuron dashboard --limit 5
+neuron today
+```
+
+El dashboard muestra **pendientes · Inbox · proyectos vinculados · notas recientes**,
+con un límite por sección. Es una vista de consulta de toda la bóveda; las tareas
+no se filtran por vencimiento. `today` abre o crea `Daily YYYY-MM-DD` en tu editor,
+usando la plantilla diaria cuando existe.
+
+### 4 · Conserva el contexto de tu repositorio
+
+Ejecuta dentro de un repositorio Git:
+
+```bash
+neuron project init --name "Rediseño API"
+neuron project
+neuron project list
+```
+
+La nota incluye secciones para **objetivo**, **siguientes pasos**, **decisiones**
+y **notas relacionadas**. `neuron project` también funciona desde subcarpetas
+del repositorio.
+
+```bash
+neuron project link "1. Projects/revisar-api.md"
+neuron project unlink
+```
+
+Vincular reemplaza la asociación anterior del repositorio. Desvincular la retira
+del dashboard sin borrar la nota. Los proyectos vinculados se consideran activos;
+las rutas de repositorios corresponden a esta máquina.
+
+### 5 · Guarda las búsquedas que repites
+
+```bash
+neuron search 'timeout tag:work folder:"1. Projects"'
+neuron search save trabajo 'tag:work folder:"1. Projects"'
+neuron search list
+neuron search run trabajo
+neuron list --saved trabajo --limit 0
+neuron list -q timeout --tag work --folder "1. Projects"
+```
+
+Los filtros se combinan con **AND**; `folder:` incluye subcarpetas. Usa comillas
+para valores con espacios, como en el ejemplo. Guardar con un nombre existente
+reemplaza su consulta. `neuron search remove trabajo` borra la búsqueda y conserva
+las notas.
+
+| Modo de búsqueda | Comportamiento |
+| :--- | :--- |
+| `neuron search '<consulta>'` | BM25 local con filtros opcionales `tag:` y `folder:` |
+| `neuron list --saved trabajo` | Consulta guardada; admite filtros adicionales |
+| `neuron list -q '<texto>'` sin filtros | BM25 por defecto; semántica si la IA está habilitada |
+| `neuron search run trabajo` | Hasta 50 resultados; usa `list --saved trabajo --limit 0` para ver todos |
+
+Estos cinco flujos se ejecutan en la **shell**, no como `/comandos` dentro de la TUI.
+
+## Interfaz de terminal
+
+Explora notas con previsualización, rutas visibles, temas claro/oscuro y paleta
+de comandos. Edita en tu editor configurado, pega texto del portapapeles en la
+nota seleccionada o copia sus bloques de código sin abrir el editor.
 
 | Tecla | Acción |
-|-----|--------|
-| `j / k` o `↑ / ↓` | Navegar por la lista de notas |
-| `Enter` | Seleccionar / confirmar |
-| `Tab / Shift+Tab` | Cambiar el foco del panel (lista de notas ↔ previsualización) |
-| `n` | Nueva nota (activa el selector de carpetas PARA) |
-| `e` | Editar la nota seleccionada en `$EDITOR` |
-| `ctrl+v` | Pegar el contenido del portapapeles al final de la nota |
-| `c` / `y` | Copiar/extraer bloques de código de la nota seleccionada |
-| `/` | Abrir la paleta de comandos (búsqueda interactiva) |
+| :--- | :--- |
+| `j / k` o `↑ / ↓` | Navegar por las notas |
+| `Tab / Shift+Tab` | Cambiar el foco entre paneles |
+| `n` | Crear una nota; elegir destino si se detectan carpetas PARA |
+| `e` | Editar la nota seleccionada |
+| `ctrl+v` | Añadir el portapapeles al final de la nota |
+| `c / y` | Seleccionar y copiar un bloque de código |
+| `/` | Buscar notas o escribir un comando de la paleta |
 | `s` | Sincronizar con Git |
-| `ctrl+g` | Resumen del grafo de conocimiento |
-| `?` | Mostrar la ayuda de atajos |
+| `ctrl+g` | Ver conteos del grafo; no es un grafo interactivo |
+| `?` | Mostrar u ocultar la ayuda de atajos |
 | `q` | Salir |
 
-**Durante la selección de carpeta (modo `📁 SAVE TO`)**
+<details>
+<summary><strong>Paleta de comandos y controles de selección</strong></summary>
 
-| Tecla | Acción |
-|-----|--------|
-| `← → / h l / ↑ ↓ / j k` | Navegar por las carpetas disponibles |
-| `Enter` | Confirmar la carpeta elegida |
-| `Esc` | Cancelar |
-
-**Durante la extracción de código (modo `💻 COPY CODE`)**
-
-| Tecla | Acción |
-|-----|--------|
-| `← → / h l / ↑ ↓ / j k` | Navegar por los bloques de código |
-| `Enter` | Copiar el bloque seleccionado al portapapeles |
-| `Esc` | Cancelar |
-
----
-
-### Paleta de comandos
-
-Busca comandos en cualquier momento desde la TUI presionando `/`:
-
-| Comando | Descripción |
-|---------|-------------|
-| `/add <título>` | Crear una nueva nota (con selector de carpetas) |
-| `/today` | Abrir o crear la nota diaria de hoy |
-| `/edit`, `/e` | Abrir la nota seleccionada en `$EDITOR` |
-| `/copy`, `/c` | Copiar la nota actual al portapapeles |
-| `/attach <ruta_o_url>`| Descargar o copiar un recurso y enlazarlo en la nota |
-| `/links`, `/l` | Abrir el primer enlace de la nota en tu navegador |
-| `/move <carpeta>` | Mover la nota seleccionada a una carpeta PARA |
+| Comando | Acción |
+| :--- | :--- |
+| `/add <título>` | Crear nota; `/add carpeta/título` indica su carpeta |
+| `/today`, `/t` | Seleccionar o crear la nota diaria |
+| `/edit`, `/e` | Abrir la nota en tu editor |
+| `/copy`, `/c` | Copiar la nota completa |
+| `/attach <ruta_o_url>`, `/a` | Copiar o descargar un adjunto |
+| `/links`, `/l` | Abrir un enlace; elegir uno cuando hay varios |
+| `/move <carpeta>`, `/m` | Mover la nota seleccionada |
 | `/rm` | Eliminar la nota seleccionada |
-| `/sync`, `/s` | Sincronizar con Git (pull y push opcional) |
-| `/stats` | Mostrar estadísticas de la bóveda |
-| `/doctor`, `/health` | Mostrar salud rápida de la bóveda en la barra de estado |
-| `/backlinks` | Mostrar backlinks de la nota seleccionada |
-| `/orphan` | Mostrar conteo y ejemplos de notas huérfanas |
-| `/open`, `/o` | Abrir la bóveda en el explorador de archivos del sistema |
-| `/theme dark\|light` | Cambiar el tema visual de la TUI en tiempo real |
-| `/quit` | Salir de Neuron |
+| `/sync`, `/s` | Sincronizar con Git |
+| `/stats` | Mostrar conteos de notas y etiquetas |
+| `/doctor`, `/health` | Mostrar un resumen de salud |
+| `/backlinks` | Mostrar un resumen de enlaces entrantes |
+| `/orphan` | Mostrar conteos y ejemplos de notas aisladas |
+| `/open`, `/o` | Abrir la bóveda en el explorador de archivos |
+| `/theme dark\|light` | Cambiar el tema; `/theme` lo alterna |
+| `/help`, `/?` | Mostrar la ayuda de atajos |
+| `/quit`, `/q` | Salir |
 
----
+Al seleccionar carpetas, enlaces o bloques de código, usa las flechas o `h/j/k/l`,
+`Enter` para confirmar y `Esc` para cancelar.
 
-### Uso de la CLI
+</details>
 
-Cada comando está pensado para ser rápido e intuitivo:
+## Referencia de comandos
+
+Usa `neuron <comando> --help` para consultar opciones y ejemplos, también en
+subcomandos como `neuron tasks done --help`.
+
+| Propósito | Comandos |
+| :--- | :--- |
+| Configuración e interfaz | `init`, `tui`, `config get`, `config set`, `completion`, `version` |
+| Captura y trabajo diario | `capture`, `inbox`, `inbox file`, `dashboard`, `today` |
+| Tareas Markdown | `tasks`, `tasks done`, `tasks reopen`, `tasks open` |
+| Contexto de repositorios | `project`, `project init`, `project link`, `project list`, `project unlink` |
+| Búsqueda y favoritos | `list`, `search`, `search save`, `search list`, `search run`, `search remove` |
+| Notas y adjuntos | `add`, `edit`, `move`, `rm`, `attach`, `links`, `open` |
+| Conexiones y mantenimiento | `backlinks`, `orphan`, `timeline`, `stats`, `doctor`, `restore`, `sync` |
+| Acceso para agentes | `mcp` |
+
+<details>
+<summary><strong>Comandos habituales para notas</strong></summary>
 
 ```bash
-neuron                                   # Abre la TUI (comportamiento por defecto)
-neuron init                              # Asistente de configuración inicial
-neuron add                               # Solicita título y muestra selector de carpetas
-neuron add "standup notes" --tag work    # Crea nota con etiqueta y luego pide la carpeta
-neuron add "1. Projects/API redesign"    # Salta el selector usando una ruta explícita
-neuron add "Config" --file nginx.conf --code # Crea una nota directamente desde un archivo externo
-cat script.py | neuron add "Script" --code python # Crea una nota con código de una tubería (pipe)
-neuron edit "standup notes"             # Abre la nota en tu `$EDITOR`
-neuron today                             # Abre o crea la nota diaria de hoy
-neuron list -q "kubernetes"              # Búsqueda semántica o por texto plano
-neuron move "standup notes" projects    # Mueve una nota a tu carpeta de Proyectos
-neuron attach "standup notes" ./img.png # Adjunta una imagen o archivo local a una nota
-neuron links "standup notes"             # Extrae y abre enlaces o imágenes en el navegador
-neuron backlinks "standup notes"         # Muestra notas que enlazan a una nota
-neuron orphan                            # Lista notas sin enlaces ni backlinks
-neuron timeline --created                # Timeline por fecha de creación
-neuron restore --list                    # Lista notas en .trash
-neuron restore "old note" --folder "4. Archive" # Restaura una nota eliminada
-neuron doctor                            # Revisión de salud de la bóveda
-neuron sync --pull                       # Sincroniza con git (pull + push)
-neuron sync --remote backup              # Sincroniza usando un remoto Git por nombre
-neuron sync --remote https://github.com/me/notes.git # Sincroniza usando una URL solo en esta ejecución
-neuron stats                             # Recuento de notas y etiquetas
-neuron config set editor "code -w"        # Cambia el editor predeterminado (soporta argumentos)
-neuron config set theme dark             # Configura el tema permanente
-neuron mcp                               # Inicia el servidor MCP
+neuron add "Standup" --folder "1. Projects" --tag work
+neuron add "Standup" --template standup
+neuron add "Config" --file nginx.conf --code --no-edit
+cat script.py | neuron add "Script" --code python
+neuron edit "Standup"
+neuron move "Standup" "1. Projects"
+neuron attach "Standup" ./imagen.png
+neuron links "Standup"
+neuron backlinks "Standup"
+neuron timeline --created
+neuron restore --list
+neuron restore "Nota antigua" --folder "4. Archive"
+neuron doctor
+neuron sync --pull
+neuron sync --remote backup
 ```
 
-Las notas creadas o movidas con Neuron deben quedarse dentro de la bóveda configurada. Rutas relativas como `../fuera` se rechazan para proteger tu sistema de archivos.
+`neuron add` sin título solicita título y carpeta. Si pasas un título, indica
+`--folder` explícitamente: la CLI no interpreta `carpeta/título` como destino.
+Los comandos anteriores de notas aceptan ID o título; los de productividad
+admiten además rutas relativas a la bóveda. Los adjuntos usan la carpeta
+configurada en Obsidian o `assets/`, con un límite de 50 MiB para descargas remotas.
 
----
+</details>
 
-### Integración con Agentes de IA (MCP)
+## Configuración y bóveda
 
-Neuron expone tu bóveda de notas como un servidor [Model Context Protocol (MCP)](https://modelcontextprotocol.io). Puedes agregarlo a clientes de IA compatibles (como Claude Desktop, Cursor o Antigravity) para darles acceso a tus notas:
+Los ajustes están en `~/.config/neuron/config.toml`:
+
+```bash
+neuron config get vault_path
+neuron config set editor "code -w"
+neuron config set theme dark
+neuron config set git_remote origin
+```
+
+Claves admitidas por `config get/set`: `vault_path`, `editor`, `theme`, `git_remote`.
+El editor admite argumentos. Las carpetas PARA son opcionales:
+
+```text
+vault/
+├── Inbox/                 Notas capturadas
+├── 1. Projects/           Notas de proyectos
+├── 2. Areas/
+├── 3. Resources/
+├── 4. Archive/
+├── templates/             Plantillas Markdown reutilizables
+└── .neuron/               Metadatos e índices locales
+    └── workspace.json     Búsquedas guardadas y vínculos a repositorios
+```
+
+Las notas son Markdown con frontmatter YAML opcional, `[[wikilinks]]` y `#tags`.
+Las notas creadas o movidas permanecen dentro de la bóveda. Las eliminadas van
+a `.trash`. Los metadatos de proyectos y búsquedas se guardan aparte del contenido.
+
+<details>
+<summary><strong>Plantillas y búsqueda semántica opcional</strong></summary>
+
+Guarda `standup.md` o `daily.md` en `.obsidian/templates/` o `templates/` dentro
+de la bóveda; se buscan en ese orden. Admiten variables de las plantillas de Go:
+
+```markdown
+# {{.Title}}
+Fecha: {{.Date}}
+
+## Siguientes pasos
+- [ ] Definir la siguiente acción
+```
+
+La IA es opcional. Edita la sección `[ai]` existente en `config.toml` para usar
+Ollama; el modelo debe estar disponible en el servidor configurado:
+
+```toml
+[ai]
+enabled = true
+provider = "ollama"
+model = "nomic-embed-text"
+ollama_url = "http://localhost:11434"
+```
+
+Ejecuta `neuron list -q "ideas relacionadas con mi presupuesto"`. Las búsquedas
+con filtros y `neuron search` siguen usando BM25 local. El código también admite
+un proveedor de embeddings de OpenAI; seleccionar un proveedor remoto envía a
+ese servicio el contenido usado para generar embeddings. Los ajustes de IA se
+editan en TOML, no mediante `neuron config set`.
+
+</details>
+
+## Acceso para agentes de IA · MCP
+
+Configura un cliente compatible con MCP para iniciar Neuron mediante stdio:
 
 ```json
 {
   "mcpServers": {
-    "neuron": { "command": "neuron", "args": ["mcp"] }
+    "neuron": {
+      "command": "neuron",
+      "args": ["mcp", "--read-only"]
+    }
   }
 }
 ```
 
-Una vez configurado, podrás pedirle a tu IA que busque, cree, resuma o mueva notas de tu bóveda sin necesidad de salir del chat.
-
-Para dar acceso más seguro a agentes, ejecuta MCP en modo solo lectura o guarda una auditoría:
+El servidor expone `search_notes`, `get_note`, `create_note`, `update_note`,
+`list_notes` y `get_daily`. Quita `--read-only` para permitir escrituras. En modo
+solo lectura, `get_daily` puede leer una nota diaria existente, pero no crearla. MCP todavía
+no expone herramientas de proyectos, tareas, movimiento o búsquedas guardadas.
 
 ```bash
-neuron mcp --read-only
+neuron mcp --vault /ruta/absoluta/a/la/boveda --read-only
 neuron mcp --audit-log ~/.local/state/neuron/mcp-audit.jsonl
 ```
 
----
+## Ayuda y alcance actual
 
-### Formato de la Bóveda
+| Si… | Prueba… |
+| :--- | :--- |
+| Falta un comando nuevo | Compila esta copia y ejecuta `./bin/neuron --help` |
+| Una búsqueda no encuentra nada | Revisa `neuron config get vault_path` y reduce los filtros |
+| No puedes actualizar una tarea | Ejecuta `neuron tasks --all` y usa su ruta y línea actuales |
+| Un proyecto no tiene contexto | Dentro del repositorio, ejecuta `neuron project init` o `project link <nota>` |
+| Falla el editor | Revisa `neuron config get editor` y configura un editor instalado |
+| Necesitas revisar la bóveda | Ejecuta `neuron doctor` y `neuron restore --list` |
 
-Neuron utiliza Markdown puro con YAML frontmatter (exactamente igual que Obsidian). Apunta Neuron a tu directorio actual de Obsidian y funcionará de inmediato. Neuron también lee la carpeta de adjuntos de `.obsidian/app.json` al guardar archivos adjuntos.
+**Siguiente paso previsto:** una interfaz local en el navegador para explorar,
+crear y editar notas, seguida de exploración visual. `neuron web` **todavía no
+está implementado**. El dashboard actual es un informe en terminal; las tareas
+no tienen programación de vencimientos y el grafo de la TUI muestra conteos.
 
-```markdown
----
-title: Mi Nota
-tags: [ideas, proyecto]
-created: 2025-05-30T09:00:00Z
----
+## Contribuir y apoyar
 
-Contenido con [[wikilinks]] y #tags-internas.
-```
-
-**Estructura PARA recomendada** (Neuron autodetecta cualquier variante similar):
-
-```
-vault/
-├── 1. Projects/
-├── 2. Areas/
-├── 3. Resources/
-└── 4. Archive/
-```
-
----
-
-### Actualización de Neuron
-
-Mantén tu instalación actualizada al último release:
+Consulta [CONTRIBUTING.md](CONTRIBUTING.md) para desarrollo y
+[SECURITY.md](SECURITY.md) para la política de seguridad.
 
 ```bash
-# Homebrew
-brew upgrade steevin/tap/neuron
-
-# Binario mediante curl
-curl -sSfL https://github.com/steevin/neuron-cli/releases/latest/download/neuron_$(uname -s)_$(uname -m).tar.gz | tar -xz -C /usr/local/bin neuron
+go test -race ./...
+go vet ./...
+go build -o bin/neuron ./cmd/neuron
 ```
 
----
-
-### Apoyo al Proyecto
-
-Crear y mantener herramientas de código abierto requiere tiempo y dedicación. Si Neuron hace que tu día a día en la terminal sea un poco más agradable, considera invitarme a un café o apoyar el desarrollo del proyecto:
-[**Apoyar el proyecto ➔**](https://paypal.me/steevin)
-
----
-
-### Licencia y Atribución
-
-Neuron CLI es software libre bajo la licencia **GNU GPL v3**.
-
-#### En pocas palabras:
-* **Manténlo abierto:** Si modificas y distribuyes este código, tu versión también debe ser de código abierto bajo la misma licencia GPL v3.
-* **Da crédito:** Por favor, mantén los avisos de copyright originales y la autoría de Daniel Steevin.
-* **Muestra algo de cariño:** Si utilizas partes de este proyecto en una bifurcación pública, añade una mención en el README apuntando hacia Neuron CLI. ¡Ayuda mucho a hacer crecer el proyecto!
-
----
-
-### Contacto
-
-Para soporte, comentarios, consultas comerciales o cualquier otra duda, puedes escribirme a:
-[**neuron@steevin.com**](mailto:neuron@steevin.com)
+[Reportar un problema](https://github.com/steevin/neuron-cli/issues) ·
+[Apoyar el proyecto](https://paypal.me/steevin) ·
+[neuron@steevin.com](mailto:neuron@steevin.com)
 
 ---
 
 <div align="center">
-Creado por Daniel Steevin
-<br>
-Distribuido bajo la <a href="LICENSE">Licencia GNU GPL v3</a> — Código abierto con Copyleft.
+
+Creado por **Daniel Steevin** · Licencia [GNU GPL v3](LICENSE)
+
+Si Neuron te ayuda, una estrella en GitHub ayuda a que otros lo encuentren.
+
 </div>

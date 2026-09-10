@@ -139,15 +139,16 @@ type Model struct {
 }
 
 type keyMap struct {
-	Tab    key.Binding
-	Search key.Binding
-	New    key.Binding
-	Paste  key.Binding
-	Edit   key.Binding
-	Sync   key.Binding
-	Graph  key.Binding
-	Help   key.Binding
-	Quit   key.Binding
+	CopyCode key.Binding
+	Tab      key.Binding
+	Search   key.Binding
+	New      key.Binding
+	Paste    key.Binding
+	Edit     key.Binding
+	Sync     key.Binding
+	Graph    key.Binding
+	Help     key.Binding
+	Quit     key.Binding
 }
 
 func (k keyMap) ShortHelp() []key.Binding {
@@ -157,20 +158,21 @@ func (k keyMap) ShortHelp() []key.Binding {
 func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Tab, k.Search, k.New, k.Paste},
-		{k.Edit, k.Sync, k.Graph, k.Help, k.Quit},
+		{k.Edit, k.CopyCode, k.Sync, k.Graph, k.Help, k.Quit},
 	}
 }
 
 var keys = keyMap{
-	Tab:    key.NewBinding(key.WithKeys("tab", "shift+tab"), key.WithHelp("tab", "focus")),
-	Search: key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "cmd palette")),
-	New:    key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "new note")),
-	Paste:  key.NewBinding(key.WithKeys("ctrl+v"), key.WithHelp("ctrl+v", "paste clipboard")),
-	Edit:   key.NewBinding(key.WithKeys("e"), key.WithHelp("e", "edit")),
-	Sync:   key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "sync")),
-	Graph:  key.NewBinding(key.WithKeys("ctrl+g"), key.WithHelp("ctrl+g", "graph")),
-	Help:   key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
-	Quit:   key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
+	CopyCode: key.NewBinding(key.WithKeys("c", "y"), key.WithHelp("c/y", "copy code")),
+	Tab:      key.NewBinding(key.WithKeys("tab", "shift+tab"), key.WithHelp("tab", "focus")),
+	Search:   key.NewBinding(key.WithKeys("/"), key.WithHelp("/", "cmd palette")),
+	New:      key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "new note")),
+	Paste:    key.NewBinding(key.WithKeys("ctrl+v"), key.WithHelp("ctrl+v", "paste clipboard")),
+	Edit:     key.NewBinding(key.WithKeys("e"), key.WithHelp("e", "edit")),
+	Sync:     key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "sync")),
+	Graph:    key.NewBinding(key.WithKeys("ctrl+g"), key.WithHelp("ctrl+g", "graph")),
+	Help:     key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "help")),
+	Quit:     key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
 }
 
 // allPaletteCommands is the full list for fuzzy suggestions.
@@ -1557,7 +1559,7 @@ func (m *Model) handlePaletteCommand(cmdStr string) tea.Cmd {
 		return nil
 
 	default:
-		m.statusMsg = "Unknown command: " + base + "  (try /add /today /sync /stats /open /edit /rm /theme /quit)"
+		m.statusMsg = "Unknown command: " + base + "  (type / for commands; ? for shortcuts)"
 		m.isSuccess = false
 		return nil
 	}

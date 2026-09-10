@@ -27,6 +27,7 @@ import (
 	"regexp"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -48,42 +49,23 @@ var version = "1.4.0"
 var rootCmd = &cobra.Command{
 	Use:   "neuron",
 	Short: "🧠 Your second brain, from the terminal",
-	Long: `neuron — a terminal-based personal knowledge manager.
+	Long: `Neuron keeps your notes, tasks and project context in a local Markdown vault.
+Works alongside Obsidian. Run 'neuron' to open the keyboard-driven terminal UI.
 
-Features:
-  • Obsidian-compatible Markdown vault (works alongside the Obsidian app)
-  • Full-text and semantic search powered by local AI embeddings (Ollama)
-  • Daily notes, wikilinks, tags, and frontmatter out of the box
-  • Git-based sync to any remote (GitHub, Gitea, …)
-  • MCP server for seamless AI agent integration (Claude, GPT-4, …)
-  • A buttery-smooth Bubble Tea TUI for keyboard-driven browsing
+Start here:
+  neuron init                       Configure a new or existing vault
+  neuron capture "An idea"          Save directly into Inbox
+  neuron dashboard                  Review tasks, Inbox and active projects
+  neuron tasks                      Find pending Markdown checkboxes
+  neuron project init               Link the current Git repository to a note
+  neuron search 'tag:work'           Search locally with structured filters
 
-TUI Commands (Press '/' inside the TUI):
-  /copy, /c                Copy the current note to clipboard
-  /attach <path_or_url>    Download/copy an asset and attach it to the note
-  /links, /l               Open the first URL in the note in your browser
-  /add <title>             Create a new note (skip picker with folder/title)
-  /edit, /e                Edit current note in external editor
-  /rm                      Delete current note
-  /sync, /s                Sync vault with Git remote
-  /today, /t               Open or create today's daily note
-  /theme                   Toggle UI theme (dark/light)
-  /open, /o                Open vault folder in the system file browser
-  /stats                   Show vault statistics
+Inside the TUI:
+  ? shows shortcuts; / opens the command palette; e opens your editor.
+  Productivity commands above run in your shell, without a leading slash.
 
-CLI Graph & Maintenance:
-  backlinks <note>          Show notes linking to a note
-  orphan                    List notes with no links or backlinks
-  timeline                  Show recent notes by updated/created time
-  restore --list            List notes in .trash
-  restore <note>            Restore a note from .trash
-  doctor                    Check vault health, Git, AI, and broken links
-
-Update:
-  Homebrew   brew upgrade steevin/tap/neuron
-  curl       curl -sSfL https://github.com/steevin/neuron-cli/releases/latest/download/neuron_$(uname -s)_$(uname -m).tar.gz | tar -xz -C /usr/local/bin neuron
-
-Run 'neuron help <command>' for detailed usage of any subcommand.`,
+Use 'neuron <command> --help' for examples and flags.
+Documentation: https://github.com/steevin/neuron-cli`,
 	SilenceUsage: true,
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
 		// saltamos el banner en comandos como version o mcp para no ensuciar la salida.
@@ -247,12 +229,16 @@ var linksCmd = &cobra.Command{
 var addCmd = &cobra.Command{
 	Use:   "add [title]",
 	Short: "Create a new note",
-	Long:  "Create a new Markdown note in your vault, optionally from clipboard content or a template.",
+	Long: `Create a Markdown note and open it in your configured editor unless --no-edit is set.
+Without a title, a form asks for a title and destination. With a title, use --folder
+to choose a destination; folder/title is not interpreted as a path by this command.
+Pipe content on stdin, or use --file, --from-clipboard or --template. Piped input
+implies --no-edit. For capture without prompts or an editor, use 'neuron capture'.`,
 	Example: `  neuron add "Meeting Notes"
   neuron add "Project Plan" --folder "1. Projects"
   neuron add "Idea" --tag idea --tag work
   
-  # Capturar código desde un archivo o consola:
+  # Capture code from a file or stdin:
   neuron add "Config" --file nginx.conf --code
   cat script.py | neuron add "Script" --code python
   neuron add "Snippet" --from-clipboard --code go`,
@@ -378,10 +364,15 @@ var addCmd = &cobra.Command{
 var listCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List notes in your vault",
-	Long:  "List notes in your vault. Supports filtering by tag or full-text/semantic query.",
+	Long: `List notes or search by text. Combine --tag, --folder and --saved filters.
+Structured queries accept tag:work and folder:"1. Projects". Filtered and saved
+searches use local BM25. Unfiltered -q uses semantic search when AI is enabled.
+Use --limit 0 for all matches. Saved queries are managed with 'neuron search'.`,
 	Example: `  neuron list
   neuron list -q "machine learning"
-  neuron list --tag meeting --limit 5`,
+  neuron list --tag meeting --limit 5
+  neuron list -q timeout --tag work --folder "1. Projects"
+  neuron list --saved work --limit 0`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, err := loadConfig()
 		if err != nil {
@@ -394,6 +385,30 @@ var listCmd = &cobra.Command{
 		limit, _ := cmd.Flags().GetInt("limit")
 		query, _ := cmd.Flags().GetString("query")
 		tags, _ := cmd.Flags().GetStringSlice("tag")
+		saved, _ := cmd.Flags().GetString("saved")
+		folder, _ := cmd.Flags().GetString("folder")
+		if saved != "" {
+			state, err := readWorkspace(store)
+			if err != nil {
+				return err
+			}
+			savedQuery, ok := state.Searches[saved]
+			if !ok {
+				return fmt.Errorf("saved search %q not found", saved)
+			}
+			query = savedQuery + " " + query
+		}
+		if folder != "" {
+			query += " folder:" + strconv.Quote(folder)
+		}
+		if len(tags) > 0 && query != "" {
+			for _, tag := range tags {
+				query += " tag:" + strconv.Quote(tag)
+			}
+		}
+		if saved != "" || folder != "" || strings.Contains(query, "tag:") || strings.Contains(query, "folder:") {
+			return runSavedSearch(cmd, store, query, limit)
+		}
 
 		if query != "" {
 			if cfg.AI.Enabled {
@@ -683,7 +698,11 @@ var statsCmd = &cobra.Command{
 var todayCmd = &cobra.Command{
 	Use:   "today",
 	Short: "Open or create today's daily note",
-	Long:  "Open the daily note for today (YYYY-MM-DD.md). Creates it if it doesn't exist.",
+	Long: `Open or create the note titled "Daily YYYY-MM-DD" in your configured editor.
+New notes are created at the vault root using the daily template, or a default
+body with goals, notes and links. Template locations: .obsidian/templates/daily.md
+or templates/daily.md.`,
+	Example: "  neuron today",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, err := loadConfig()
 		if err != nil {
@@ -835,9 +854,11 @@ var syncCmd = &cobra.Command{
 }
 
 var backlinksCmd = &cobra.Command{
-	Use:   "backlinks [id-or-title]",
-	Short: "Show notes that link to a note",
-	Args:  cobra.ExactArgs(1),
+	Use:     "backlinks [id-or-title]",
+	Short:   "Show notes that link to a note",
+	Long:    "List incoming wikilinks for a note identified by ID or title.",
+	Example: "  neuron backlinks \"Project Plan\"",
+	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, err := loadConfig()
 		if err != nil {
@@ -879,8 +900,10 @@ var backlinksCmd = &cobra.Command{
 }
 
 var orphanCmd = &cobra.Command{
-	Use:   "orphan",
-	Short: "List notes with no links or backlinks",
+	Use:     "orphan",
+	Short:   "List notes with no links or backlinks",
+	Long:    "Find isolated notes with no outgoing wikilinks or incoming backlinks.",
+	Example: "  neuron orphan --limit 20",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, err := loadConfig()
 		if err != nil {
@@ -912,8 +935,10 @@ var orphanCmd = &cobra.Command{
 }
 
 var timelineCmd = &cobra.Command{
-	Use:   "timeline",
-	Short: "Show notes ordered by updated or created time",
+	Use:     "timeline",
+	Short:   "Show notes ordered by updated or created time",
+	Long:    "List recent notes by modification time, or by creation time with --created.",
+	Example: "  neuron timeline --limit 10\n  neuron timeline --created",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, err := loadConfig()
 		if err != nil {
@@ -947,8 +972,10 @@ var timelineCmd = &cobra.Command{
 }
 
 var restoreCmd = &cobra.Command{
-	Use:   "restore [id-or-title]",
-	Short: "List or restore notes from .trash",
+	Use:     "restore [id-or-title]",
+	Short:   "List or restore notes from .trash",
+	Long:    "Use --list to find deleted notes, then restore one by ID or title.\nUse --folder to choose a destination relative to the vault.",
+	Example: "  neuron restore --list\n  neuron restore \"Old note\" --folder \"4. Archive\"",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, err := loadConfig()
 		if err != nil {
@@ -987,8 +1014,10 @@ var restoreCmd = &cobra.Command{
 }
 
 var doctorCmd = &cobra.Command{
-	Use:   "doctor",
-	Short: "Check vault health and local integrations",
+	Use:     "doctor",
+	Short:   "Check vault health and local integrations",
+	Long:    "Report note and tag counts, isolated notes, broken wikilinks, trash, Git status,\nObsidian detection and AI connectivity. This command reports issues without fixing them.",
+	Example: "  neuron doctor",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, err := loadConfig()
 		if err != nil {
@@ -1296,6 +1325,8 @@ func init() {
 	listCmd.Flags().StringSlice("tag", nil, "Filter by tag (repeatable)")
 	listCmd.Flags().StringP("query", "q", "", "Full-text or semantic search query")
 	listCmd.Flags().Int("limit", 50, "Maximum number of notes to display")
+	listCmd.Flags().String("saved", "", "Run a saved search")
+	listCmd.Flags().String("folder", "", "Filter by vault folder")
 
 	// flags de rmCmd
 	rmCmd.Flags().BoolP("force", "f", false, "Skip confirmation prompt")
