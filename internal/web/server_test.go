@@ -105,7 +105,9 @@ func TestCreateSearchSaveAndConflict(t *testing.T) {
 	if w.Code != 409 {
 		t.Fatal(w.Code, w.Body.String())
 	}
-	os.WriteFile(filepath.Join(dir, n.Path), []byte("External edit\n"), 0600)
+	if err := os.WriteFile(filepath.Join(dir, n.Path), []byte("External edit\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	w = request(t, s, "PUT", "/api/note", map[string]string{"path": n.Path, "version": updated.Version, "content": "Overwrite external"})
 	if w.Code != 409 {
 		t.Fatal(w.Code, w.Body.String())
@@ -118,7 +120,9 @@ func TestCreateSearchSaveAndConflict(t *testing.T) {
 func TestSavePreservesCRLFAndPermissions(t *testing.T) {
 	s, dir := fixture(t)
 	raw := "---\r\ntitle: Original\r\ncustom: keep\r\n---\r\n\r\nText\r\n"
-	os.WriteFile(filepath.Join(dir, "original.md"), []byte(raw), 0640)
+	if err := os.WriteFile(filepath.Join(dir, "original.md"), []byte(raw), 0640); err != nil {
+		t.Fatal(err)
+	}
 	n := decodeNote(t, request(t, s, "GET", "/api/note?path=original.md", nil))
 	decodeNote(t, request(t, s, "PUT", "/api/note", map[string]string{"path": n.Path, "version": n.Version, "content": "Updated\n"}))
 	result, _ := os.ReadFile(filepath.Join(dir, "original.md"))
@@ -134,7 +138,9 @@ func TestSavePreservesCRLFAndPermissions(t *testing.T) {
 func TestVaultBoundariesAndAssets(t *testing.T) {
 	s, dir := fixture(t)
 	outside := t.TempDir()
-	os.WriteFile(filepath.Join(outside, "private.md"), []byte("secret"), 0600)
+	if err := os.WriteFile(filepath.Join(outside, "private.md"), []byte("secret"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.Symlink(outside, filepath.Join(dir, "escape")); err != nil {
 		t.Skip(err)
 	}
@@ -150,18 +156,24 @@ func TestVaultBoundariesAndAssets(t *testing.T) {
 			t.Fatal(w.Code, w.Body.String())
 		}
 	}
-	os.WriteFile(filepath.Join(dir, "image.svg"), []byte("<svg onload='alert(1)'/>"), 0600)
+	if err := os.WriteFile(filepath.Join(dir, "image.svg"), []byte("<svg onload='alert(1)'/>"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	if w := request(t, s, "GET", "/api/asset?path=image.svg", nil); w.Code != 415 {
 		t.Fatal(w.Code)
 	}
-	os.WriteFile(filepath.Join(dir, "image.png"), []byte{137, 80, 78, 71, 13, 10, 26, 10}, 0600)
+	if err := os.WriteFile(filepath.Join(dir, "image.png"), []byte{137, 80, 78, 71, 13, 10, 26, 10}, 0600); err != nil {
+		t.Fatal(err)
+	}
 	if w := request(t, s, "GET", "/api/asset?path=image.png", nil); w.Code != 200 || w.Header().Get("Content-Type") != "image/png" {
 		t.Fatal(w.Code)
 	}
 }
 func TestMarkdownSafetyAndWikiLinks(t *testing.T) {
 	s, dir := fixture(t)
-	os.WriteFile(filepath.Join(dir, "photo.png"), []byte("image"), 0600)
+	if err := os.WriteFile(filepath.Join(dir, "photo.png"), []byte("image"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	content := "# Heading\n- [x] Done\n[[Related|Read this]]\n\n`[[Not a link]]`\n\n<script>alert(1)</script>\n\n[x](javascript:alert(1))\n\n![local](photo.png)\n\n![remote](https://example.com/track.png)\n\n| A | B |\n|---|---|\n| 1 | 2 |"
 	result := renderMarkdown(content, "note.md", s.root)
 	for _, bad := range []string{"<script", "javascript:", `src="https://`} {
@@ -177,8 +189,12 @@ func TestMarkdownSafetyAndWikiLinks(t *testing.T) {
 }
 func TestMalformedNoteIsReportedAndDoesNotHideGoodNotes(t *testing.T) {
 	s, dir := fixture(t)
-	os.WriteFile(filepath.Join(dir, "broken.md"), []byte("---\ntitle: [\n---\n"), 0600)
-	os.WriteFile(filepath.Join(dir, "good.md"), []byte("# Good\n"), 0600)
+	if err := os.WriteFile(filepath.Join(dir, "broken.md"), []byte("---\ntitle: [\n---\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "good.md"), []byte("# Good\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	w := request(t, s, "GET", "/api/notes", nil)
 	if !strings.Contains(w.Body.String(), "Cannot parse broken.md") || !strings.Contains(w.Body.String(), "good.md") {
 		t.Fatal(w.Body.String())

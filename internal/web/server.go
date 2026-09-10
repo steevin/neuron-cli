@@ -115,17 +115,23 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	types := map[string]string{"index.html": "text/html; charset=utf-8", "app.js": "text/javascript; charset=utf-8", "style.css": "text/css; charset=utf-8"}
 	w.Header().Set("Content-Type", types[name])
 	if r.Method != http.MethodHead {
-		w.Write(data)
+		if _, err := w.Write(data); err != nil {
+			return
+		}
 	}
 }
 func fail(w http.ResponseWriter, status int, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]string{"error": message})
+	if err := json.NewEncoder(w).Encode(map[string]string{"error": message}); err != nil {
+		return
+	}
 }
 func respond(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(v)
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		return
+	}
 }
 func decode(w http.ResponseWriter, r *http.Request, v any) bool {
 	r.Body = http.MaxBytesReader(w, r.Body, maxNoteSize+16384)
@@ -439,7 +445,8 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 			fail(w, 500, "Cannot prepare note save")
 			return
 		}
-		defer s.root.Remove(temp)
+		// After a successful rename the temporary path no longer exists.
+		defer func() { _ = s.root.Remove(temp) }()
 		_, err = f.Write(updated)
 		if err == nil {
 			err = f.Sync()

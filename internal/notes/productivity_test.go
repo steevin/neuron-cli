@@ -33,7 +33,9 @@ func TestTasksPreserveSourceAndIgnoreExamples(t *testing.T) {
 func TestTaskReopenAndLongFence(t *testing.T) {
 	raw := "````markdown\n```\n- [ ] example\n````\n* [X] actual\n"
 	path := filepath.Join(t.TempDir(), "note.md")
-	os.WriteFile(path, []byte(raw), 0600)
+	if err := os.WriteFile(path, []byte(raw), 0600); err != nil {
+		t.Fatal(err)
+	}
 	tasks := Tasks(&Note{Path: path, RawContent: raw})
 	if len(tasks) != 1 || tasks[0].Line != 5 {
 		t.Fatalf("unexpected tasks: %+v", tasks)

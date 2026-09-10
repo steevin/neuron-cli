@@ -449,10 +449,7 @@ func (s *Store) isCacheStaleLocked() bool {
 			return true
 		}
 	}
-	if s.walkVaultMdCountLocked() != s.cachedFileCnt {
-		return true
-	}
-	return false
+	return s.walkVaultMdCountLocked() != s.cachedFileCnt
 }
 
 // walkVaultMdCountLocked counts .md files in the vault (excluding dotdirs and
@@ -460,9 +457,9 @@ func (s *Store) isCacheStaleLocked() bool {
 // with or without a lock.
 func (s *Store) walkVaultMdCountLocked() int {
 	var cnt int
-	filepath.WalkDir(s.VaultPath, func(path string, d os.DirEntry, err error) error {
+	err := filepath.WalkDir(s.VaultPath, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
-			return nil
+			return err
 		}
 		if d.IsDir() {
 			if strings.HasPrefix(d.Name(), ".") {
@@ -475,6 +472,10 @@ func (s *Store) walkVaultMdCountLocked() int {
 		}
 		return nil
 	})
+	// An incomplete scan cannot validate the cached count.
+	if err != nil {
+		return -1
+	}
 	return cnt
 }
 

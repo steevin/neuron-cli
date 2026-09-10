@@ -1090,7 +1090,7 @@ func brokenLinks(noteList []*notes.Note, graph *notes.Graph) []brokenLink {
 		}
 	}
 	sort.Slice(broken, func(i, j int) bool {
-		if strings.ToLower(broken[i].Source) == strings.ToLower(broken[j].Source) {
+		if strings.EqualFold(broken[i].Source, broken[j].Source) {
 			return strings.ToLower(broken[i].Target) < strings.ToLower(broken[j].Target)
 		}
 		return strings.ToLower(broken[i].Source) < strings.ToLower(broken[j].Source)

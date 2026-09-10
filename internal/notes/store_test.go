@@ -214,7 +214,9 @@ func TestStoreCacheBehavior(t *testing.T) {
 
 	// Simulate external change by modifying a file's mod time
 	note := notes[0]
-	os.Chtimes(note.Path, time.Now().Add(time.Hour), time.Now().Add(time.Hour))
+	if err := os.Chtimes(note.Path, time.Now().Add(time.Hour), time.Now().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
 	if !store.IsCacheStale() {
 		t.Error("expected IsCacheStale to be true after external mod")
 	}

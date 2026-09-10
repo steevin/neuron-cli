@@ -106,7 +106,9 @@ func renderMarkdown(content, notePath string, root *os.Root) string {
 	}
 	walk(doc)
 	output.Reset()
-	html.Render(&output, doc)
+	if err := html.Render(&output, doc); err != nil {
+		return ""
+	}
 	policy := bluemonday.UGCPolicy()
 	policy.AllowAttrs("data-wiki").OnElements("a")
 	policy.AllowAttrs("type").Matching(regexp.MustCompile(`^checkbox$`)).OnElements("input")
