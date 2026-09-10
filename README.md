@@ -10,7 +10,7 @@ A local Markdown workspace for your terminal — compatible with Obsidian.
 
 **Local first** · **Keyboard driven** · **Markdown files** · **Optional AI & MCP**
 
-[Quick start](#quick-start) · [Workflows](#daily-workflows) · [Commands](#command-reference) · [Español](README.es.md)
+[Quick start](#quick-start) · [Web workspace](#local-web-workspace) · [Workflows](#daily-workflows) · [Commands](#command-reference) · [Español](README.es.md)
 
 </div>
 
@@ -168,6 +168,58 @@ spaces as shown above. Saving an existing name replaces its query.
 
 These five workflows run in the **shell**, not as `/commands` in the TUI.
 
+## Local web workspace
+
+```bash
+neuron web
+```
+
+Opens your configured vault in the browser automatically. The web workspace is
+embedded in the binary: no Node.js, extra installation or hosting service required.
+
+| View | What you can do |
+| :--- | :--- |
+| Library | Browse folders and tags; switch between lists and cards |
+| Search | Find words in titles and the full content of notes |
+| Editor | Create notes with folders and tags; edit their Markdown bodies |
+| Read / Write / Both | Read, edit or work with a live preview |
+| Connections | Follow `[[wikilinks]]`, Markdown note links and backlinks |
+| Idea graph | Open notes from the map, zoom and pan |
+| Today | Open an existing daily note or create one in the browser |
+| Theme | Switch between light and dark |
+
+**Editing modes:** **Escribir (Write)** edits Markdown source; **Lectura (Read)**
+shows the formatted result without editing it; **Ambos (Both)** combines the
+Markdown editor and preview. A Word/Notion-style visual editor (WYSIWYG) is not
+yet implemented. Notes always remain `.md` files.
+
+**Saving:** edits autosave after one second of inactivity. You can also press Save
+or `⌘/Ctrl S`. Existing frontmatter is preserved. Every four seconds, the workspace
+checks for external edits: clean notes refresh automatically; conflicting drafts
+can be compared with the disk version, saved as a separate note, or discarded by
+reloading from disk. Unsaved drafts live in the tab; keep it open until saved or
+a conflict is resolved. The current web interface uses Spanish labels.
+
+```bash
+neuron web --port 7878
+neuron web --vault /path/to/vault --no-open
+```
+
+An available port is chosen by default. `--no-open` prints the session link for
+manual opening. The server listens only on `127.0.0.1`; keep its terminal open
+and press `Ctrl+C` to stop. The session link grants access to this vault while the
+server is running; use the new link after restarting the server.
+
+**Shortcuts:** `⌘/Ctrl K` searches, `⌘/Ctrl N` creates a note and `⌘/Ctrl S` saves.
+
+Preview supports tables, code blocks, checkboxes and local PNG, JPEG, GIF, WebP
+and AVIF images. It does not execute note HTML or fetch remote images. The library
+skips hidden files and symbolic links; notes are limited to 4 MiB and images to
+50 MiB. The graph shows the 150 most recent notes; hover or focus a node in dense
+maps to see its title. Ambiguous wikilinks require locating the note with search.
+Daily notes created on the web use a basic body; `neuron today` retains the CLI
+workflow with custom templates.
+
 ## Terminal interface
 
 Browse notes with a preview, folder breadcrumbs, dark/light themes and a command
@@ -223,7 +275,7 @@ such as `neuron tasks done --help`.
 
 | Purpose | Commands |
 | :--- | :--- |
-| Setup and interface | `init`, `tui`, `config get`, `config set`, `completion`, `version` |
+| Setup and interface | `init`, `tui`, `web`, `config get`, `config set`, `completion`, `version` |
 | Capture and daily work | `capture`, `inbox`, `inbox file`, `dashboard`, `today` |
 | Markdown tasks | `tasks`, `tasks done`, `tasks reopen`, `tasks open` |
 | Repository context | `project`, `project init`, `project link`, `project list`, `project unlink` |
@@ -359,10 +411,11 @@ neuron mcp --audit-log ~/.local/state/neuron/mcp-audit.jsonl
 | An editor command fails | Check `neuron config get editor`; configure an installed editor |
 | The vault needs checking | Run `neuron doctor` and `neuron restore --list` |
 
-**Next planned step:** a local browser interface for browsing, creating and
-editing notes, with visual exploration later. `neuron web` is **not implemented**.
-The current dashboard is a terminal report; tasks have no due-date scheduling,
-and the TUI graph displays counts rather than a navigable graph.
+**Current scope:** the web workspace browses, creates and edits note bodies.
+Existing frontmatter is preserved; rename, move and delete operations remain in
+the CLI or your editor. The CLI dashboard is a terminal report and tasks have no
+due-date scheduling. The interactive graph is available on the web; the TUI graph
+still displays counts.
 
 ## Contributing and support
 

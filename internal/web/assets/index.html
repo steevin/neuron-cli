@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light dark"><title>Neuron · Tu espacio de ideas</title>
+<link rel="stylesheet" href="/style.css"><script src="/app.js" defer></script>
+</head>
+<body>
+<svg class="symbols" aria-hidden="true"><defs>
+<symbol id="i-note" viewBox="0 0 24 24"><path d="M14 3H5v18h14V8zm0 0v5h5M8 12h8M8 16h6"/></symbol>
+<symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></symbol>
+<symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+<symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7V5h7l2 3h9v12H3z"/></symbol>
+<symbol id="i-inbox" viewBox="0 0 24 24"><path d="M5 4h14l3 11v5H2v-5zm-3 11h6l2 3h4l2-3h6"/></symbol>
+<symbol id="i-day" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 2v6M17 2v6M3 11h18M8 15h3"/></symbol>
+<symbol id="i-graph" viewBox="0 0 24 24"><circle cx="5" cy="5" r="3"/><circle cx="19" cy="6" r="3"/><circle cx="12" cy="19" r="3"/><path d="m8 5 8 1M7 8l4 8M18 9l-5 7"/></symbol>
+<symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 1v3M12 20v3M1 12h3M20 12h3M4 4l2 2M18 18l2 2M4 20l2-2M18 6l2-2"/></symbol>
+<symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-6-6 6 6-6 6"/></symbol>
+<symbol id="i-list" viewBox="0 0 24 24"><path d="M8 5h13M8 12h13M8 19h13M3 5h1M3 12h1M3 19h1"/></symbol>
+<symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="6" height="6" rx="1"/><rect x="15" y="3" width="6" height="6" rx="1"/><rect x="3" y="15" width="6" height="6" rx="1"/><rect x="15" y="15" width="6" height="6" rx="1"/></symbol>
+<symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+</defs></svg>
+<div id="app" class="workspace">
+<aside class="sidebar" aria-label="Navegación de la bóveda">
+ <a class="brand" href="#" id="home"><span class="brand-mark"><svg><use href="#i-graph"/></svg></span><strong>neuron<span class="brand-dot">.</span></strong><span class="local-pill">LOCAL</span></a>
+ <button id="newNote" class="primary new-note"><svg><use href="#i-plus"/></svg>Nueva nota <kbd>⌘ N</kbd></button>
+ <span class="section-label">TU ESPACIO</span>
+ <nav class="main-nav">
+  <button data-view="all" class="nav-item active"><svg><use href="#i-note"/></svg>Todas las notas<span id="allCount" class="count">0</span></button>
+  <button data-view="inbox" class="nav-item"><svg><use href="#i-inbox"/></svg>Inbox<span id="inboxCount" class="count">0</span></button>
+  <button data-view="today" class="nav-item"><svg><use href="#i-day"/></svg>Hoy</button>
+  <button data-view="graph" class="nav-item"><svg><use href="#i-graph"/></svg>Grafo de ideas</button>
+ </nav>
+ <div class="sidebar-scroll"><span class="section-label">CARPETAS</span><nav id="folders" class="folder-nav" aria-label="Carpetas"></nav>
+ <span class="section-label tags-label">ETIQUETAS</span><div id="tags" class="tag-cloud"></div></div>
+ <footer class="sidebar-footer"><span class="connection-dot"></span><div><strong id="vaultName">Conectando…</strong><small id="connection">Tus archivos, en tu equipo</small></div><button id="theme" class="icon-button" title="Cambiar tema" aria-label="Cambiar tema"><svg><use href="#i-sun"/></svg></button></footer>
+</aside>
+<section class="library" aria-label="Lista de notas">
+ <div class="library-heading"><span class="eyebrow">BIBLIOTECA</span><h1 id="viewTitle">Todas las notas</h1><p id="viewCaption">Un lugar para cada idea.</p></div>
+ <label class="search-box"><svg><use href="#i-search"/></svg><input id="search" type="search" placeholder="Buscar en tus notas…" aria-label="Buscar en el contenido de las notas"><kbd>⌘ K</kbd></label>
+ <div class="list-toolbar"><span id="resultCount">Cargando notas…</span><div class="view-toggle"><button id="listView" class="icon-button selected" aria-label="Vista de lista" aria-pressed="true"><svg><use href="#i-list"/></svg></button><button id="cardView" class="icon-button" aria-label="Vista de tarjetas" aria-pressed="false"><svg><use href="#i-grid"/></svg></button></div></div>
+ <div id="noteList" class="note-list"></div>
+ <div class="library-foot"><span class="connection-dot"></span>Markdown. Sin salir de tu flujo.</div>
+</section>
+<main class="main-panel">
+ <header class="topbar"><div id="breadcrumb">Tu espacio de ideas</div><div class="topbar-right"><span id="saveStatus" role="status" aria-live="polite">Local · Markdown</span><button id="helpButton" class="icon-button" aria-label="Ayuda y atajos">?</button></div></header>
+ <section id="welcome" class="welcome">
+  <div class="welcome-art" aria-hidden="true"><span class="orbit orbit-one"></span><span class="orbit orbit-two"></span><span class="orbit-node node-one"></span><span class="orbit-node node-two"></span><span class="orbit-node node-three"></span><div class="art-core"><svg><use href="#i-graph"/></svg></div></div>
+  <span class="eyebrow">ESPACIO PARA PENSAR</span><h2>Tus ideas.<br><em>Más conectadas.</em></h2><p>Captura lo que importa, encuentra lo que necesitas<br class="wide-only"> y dale continuidad a lo que estás construyendo.</p>
+  <div class="welcome-actions"><button id="welcomeNew" class="primary"><svg><use href="#i-plus"/></svg>Escribir una nota</button><button id="welcomeGraph" class="text-button">Explorar conexiones <svg><use href="#i-arrow"/></svg></button></div>
+  <div class="stats"><div><strong id="statNotes">0</strong><span>notas en tu espacio</span></div><div><strong id="statTasks">0</strong><span>tareas pendientes</span></div><div><strong id="statLinks">0</strong><span>enlaces entre ideas</span></div></div>
+  <div class="welcome-tip"><kbd>⌘ K</kbd><span>Tu próxima idea puede estar en una nota anterior.</span></div>
+ </section>
+ <section id="notePane" class="note-pane" hidden>
+  <div id="conflict" class="conflict" role="alert" hidden><strong>Hay una versión nueva en disco.</strong><p>Conservamos lo que estás escribiendo. Puedes ver ambas versiones, guardar tu borrador en otra nota o cargar la versión del archivo.</p><div><button id="compareConflict">Comparar</button><button id="copyDraft">Guardar como otra nota</button><button id="reloadConflict">Cargar desde disco</button></div></div>
+  <div class="document-heading"><div id="noteTags" class="document-tags"></div><h2 id="noteTitle"></h2><div class="document-meta"><span id="noteDate"></span><span>·</span><span id="wordCount"></span></div></div>
+  <div class="editor-toolbar"><div class="mode-tabs" role="group" aria-label="Modo del editor"><button data-mode="read" class="active" aria-pressed="true">Lectura</button><button data-mode="edit" aria-pressed="false">Escribir</button><button data-mode="split" aria-pressed="false">Ambos</button></div><button id="save" class="save-button" title="Guardar (⌘/Ctrl S)"><svg><use href="#i-check"/></svg>Guardar</button></div>
+  <div id="editorArea" class="editor-area mode-read"><label class="sr-only" for="editor">Contenido Markdown de la nota</label><textarea id="editor" spellcheck="false" placeholder="Deja espacio para tu próxima idea…"></textarea><article id="preview" class="markdown"></article></div>
+  <section class="connections"><span class="section-label">CONECTADA CON</span><div id="relatedNotes"></div></section>
+ </section>
+ <section id="graphPane" class="graph-pane" hidden><div class="graph-heading"><span class="eyebrow">UNA IDEA LLEVA A OTRA</span><h2>Tu mapa de conexiones</h2><p>Selecciona una nota para seguir el hilo. Arrastra el mapa y usa la rueda para acercarte.</p></div><div class="graph-controls"><button id="zoomOut" aria-label="Alejar grafo">−</button><button id="resetGraph">Centrar</button><button id="zoomIn" aria-label="Acercar grafo">+</button></div><svg id="graph" viewBox="0 0 900 650" role="group" aria-label="Grafo de notas"><g id="graphScene"></g></svg><p id="graphSummary" class="graph-summary"></p></section>
+</main>
+</div>
+<dialog id="createDialog"><form id="createForm"><div class="dialog-heading"><span class="eyebrow">EMPIEZA CON UNA IDEA</span><button type="button" class="icon-button" data-close="createDialog" aria-label="Cerrar">×</button></div><h2>Nueva nota</h2><label>Título<input id="createTitle" required maxlength="160" placeholder="¿Qué tienes en mente?" autocomplete="off"></label><label>Carpeta<input id="createFolder" list="folderOptions" placeholder="Raíz de la bóveda"><datalist id="folderOptions"></datalist></label><label>Etiquetas <span class="optional">opcional</span><input id="createTags" placeholder="ideas, trabajo" autocomplete="off"></label><p id="createError" class="error-text" role="alert"></p><div class="dialog-actions"><button type="button" data-close="createDialog">Cancelar</button><button type="submit" class="primary">Crear nota <svg><use href="#i-arrow"/></svg></button></div></form></dialog>
+<dialog id="helpDialog"><div class="dialog-heading"><span class="eyebrow">A TU RITMO</span><button class="icon-button" data-close="helpDialog" aria-label="Cerrar">×</button></div><h2>Un poco menos de fricción.</h2><dl class="shortcut-list"><dt>Buscar notas</dt><dd>⌘ / Ctrl K</dd><dt>Nueva nota</dt><dd>⌘ / Ctrl N</dd><dt>Guardar</dt><dd>⌘ / Ctrl S</dd></dl><p><strong>Escribir</strong> edita Markdown; <strong>Lectura</strong> muestra el resultado sin editarlo; <strong>Ambos</strong> combina editor y previsualización. El editor visual tipo Word o Notion todavía no está disponible. Tus notas siguen siendo archivos <code>.md</code>.</p><p>Escribe en Markdown y conecta notas con <code>[[Título de la nota]]</code>. Los cambios se guardan automáticamente al dejar de escribir.</p><p>La interfaz comprueba los cambios externos cada cuatro segundos. Si hay un conflicto, conserva tu borrador para que puedas compararlo.</p><p>Las imágenes locales PNG, JPEG, GIF, WebP y AVIF se muestran en la vista de lectura. No se cargan imágenes remotas automáticamente.</p><p class="muted">Mantén la terminal de Neuron abierta mientras trabajas.</p></dialog>
+<dialog id="compareDialog" class="compare-dialog"><div class="dialog-heading"><span class="eyebrow">DOS VERSIONES, NINGUNA PERDIDA</span><button class="icon-button" data-close="compareDialog" aria-label="Cerrar">×</button></div><h2>Compara los cambios</h2><div class="compare-columns"><label>Tu borrador<textarea id="draftVersion" readonly></textarea></label><label>Versión en disco<textarea id="diskVersion" readonly></textarea></label></div></dialog>
+<div id="toast" role="status" aria-live="polite" hidden></div>
+</body></html>

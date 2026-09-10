@@ -2003,8 +2003,8 @@ func (m Model) renderRightColumn(height, width int) string {
 	// ─── LICENSE ───
 	licenseTitle := statsTitleStyle.Render("LICENSE")
 	licenseRows := []string{
-		fmt.Sprintf("%s", labelStyle.Render("GNU GPL v3 (Copyleft)")),
-		fmt.Sprintf("%s", lipgloss.NewStyle().Foreground(theme.Muted).Render("🄲 2025-2026 Daniel Steevin")),
+		labelStyle.Render("GNU GPL v3 (Copyleft)"),
+		lipgloss.NewStyle().Foreground(theme.Muted).Render("🄲 2025-2026 Daniel Steevin"),
 	}
 	licenseContent := lipgloss.JoinVertical(lipgloss.Left, append([]string{licenseTitle}, licenseRows...)...)
 	licenseCard := licenseContent

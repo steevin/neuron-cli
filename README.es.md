@@ -10,7 +10,7 @@ Un espacio de trabajo Markdown local para tu terminal, compatible con Obsidian.
 
 **Local primero** · **Control por teclado** · **Archivos Markdown** · **IA y MCP opcionales**
 
-[Inicio rápido](#inicio-rápido) · [Flujos de trabajo](#flujos-de-trabajo) · [Comandos](#referencia-de-comandos) · [English](README.md)
+[Inicio rápido](#inicio-rápido) · [Interfaz web](#interfaz-web-local) · [Flujos de trabajo](#flujos-de-trabajo) · [Comandos](#referencia-de-comandos) · [English](README.md)
 
 </div>
 
@@ -172,6 +172,59 @@ las notas.
 
 Estos cinco flujos se ejecutan en la **shell**, no como `/comandos` dentro de la TUI.
 
+## Interfaz web local
+
+```bash
+neuron web
+```
+
+Abre automáticamente el navegador con la bóveda configurada. La web está incluida
+en el binario: no necesita Node.js, instalaciones adicionales ni servicios de hosting.
+
+| Vista | Qué puedes hacer |
+| :--- | :--- |
+| Biblioteca | Navegar por carpetas y etiquetas; alternar lista y tarjetas |
+| Búsqueda | Buscar palabras en títulos y en todo el contenido de las notas |
+| Editor | Crear notas con carpeta y etiquetas; editar su cuerpo en Markdown |
+| Lectura / Escribir / Ambos | Leer, editar o trabajar con previsualización |
+| Conexiones | Abrir `[[wikilinks]]`, enlaces Markdown a notas y backlinks |
+| Grafo de ideas | Abrir notas desde el mapa, acercar, alejar y desplazarlo |
+| Hoy | Abrir la nota diaria existente o crear una desde la web |
+| Tema | Alternar entre claro y oscuro |
+
+**Modos de edición:** **Escribir** permite editar el código Markdown; **Lectura**
+muestra el resultado formateado sin editarlo; **Ambos** combina el editor Markdown
+y la previsualización. El editor visual tipo Word o Notion (WYSIWYG) todavía no
+está implementado. Las notas siempre se guardan como archivos `.md`.
+
+**Guardado:** los cambios se guardan al dejar de escribir durante un segundo.
+También puedes pulsar Guardar o `⌘/Ctrl S`. Se conserva el frontmatter del archivo.
+La web comprueba los cambios externos cada cuatro segundos: actualiza las notas
+sin editar y, si existe un borrador en conflicto, permite comparar ambas versiones,
+guardar el borrador como otra nota o recargar desde disco. Un borrador sin guardar
+vive en la pestaña; mantenla abierta hasta resolver el conflicto o guardar.
+
+```bash
+neuron web --port 7878
+neuron web --vault /ruta/a/tu/boveda --no-open
+```
+
+El puerto se elige automáticamente por defecto. `--no-open` imprime el enlace de
+sesión para abrirlo manualmente. El servidor escucha solo en `127.0.0.1`; conserva
+la terminal abierta y pulsa `Ctrl+C` para detenerlo. El enlace de sesión da acceso
+a esta bóveda mientras el servidor esté activo; usa el enlace nuevo tras reiniciarlo.
+
+**Atajos:** `⌘/Ctrl K` busca, `⌘/Ctrl N` crea una nota y `⌘/Ctrl S` guarda.
+
+La previsualización admite tablas, bloques de código, casillas e imágenes locales
+PNG, JPEG, GIF, WebP y AVIF. No ejecuta HTML de las notas ni carga imágenes remotas.
+La web omite archivos ocultos y enlaces simbólicos en la biblioteca; acepta notas
+hasta 4 MiB e imágenes hasta 50 MiB. El grafo muestra las 150 notas más recientes;
+en mapas densos, enfoca o pasa el cursor sobre un nodo para ver su título.
+Los wikilinks ambiguos requieren localizar la nota por búsqueda. La nota diaria
+creada desde la web usa un cuerpo básico; `neuron today` conserva el flujo CLI
+con plantillas personalizadas.
+
 ## Interfaz de terminal
 
 Explora notas con previsualización, rutas visibles, temas claro/oscuro y paleta
@@ -227,7 +280,7 @@ subcomandos como `neuron tasks done --help`.
 
 | Propósito | Comandos |
 | :--- | :--- |
-| Configuración e interfaz | `init`, `tui`, `config get`, `config set`, `completion`, `version` |
+| Configuración e interfaz | `init`, `tui`, `web`, `config get`, `config set`, `completion`, `version` |
 | Captura y trabajo diario | `capture`, `inbox`, `inbox file`, `dashboard`, `today` |
 | Tareas Markdown | `tasks`, `tasks done`, `tasks reopen`, `tasks open` |
 | Contexto de repositorios | `project`, `project init`, `project link`, `project list`, `project unlink` |
@@ -364,10 +417,11 @@ neuron mcp --audit-log ~/.local/state/neuron/mcp-audit.jsonl
 | Falla el editor | Revisa `neuron config get editor` y configura un editor instalado |
 | Necesitas revisar la bóveda | Ejecuta `neuron doctor` y `neuron restore --list` |
 
-**Siguiente paso previsto:** una interfaz local en el navegador para explorar,
-crear y editar notas, seguida de exploración visual. `neuron web` **todavía no
-está implementado**. El dashboard actual es un informe en terminal; las tareas
-no tienen programación de vencimientos y el grafo de la TUI muestra conteos.
+**Alcance actual:** la web permite explorar, crear y editar el cuerpo de las notas.
+El frontmatter existente se conserva; renombrar, mover y eliminar notas sigue
+haciéndose desde la CLI o tu editor. El dashboard CLI es un informe en terminal;
+las tareas aún no tienen programación de vencimientos. El grafo interactivo está
+disponible en la web, mientras que el de la TUI muestra conteos.
 
 ## Contribuir y apoyar
 

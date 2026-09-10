@@ -69,9 +69,15 @@ func TestCaptureInboxAndFile(t *testing.T) {
 }
 func TestSavedSearchFiltersAndPersistence(t *testing.T) {
 	s := productivityFixture(t)
-	s.Create("1. Projects/API", "API", []string{"work"}, "timeout bug")
-	s.Create("1. Projects-old", "Wrong", []string{"work"}, "timeout")
-	s.Create("Inbox", "Other", []string{"personal"}, "timeout")
+	if _, err := s.Create("1. Projects/API", "API", []string{"work"}, "timeout bug"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Create("1. Projects-old", "Wrong", []string{"work"}, "timeout"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Create("Inbox", "Other", []string{"personal"}, "timeout"); err != nil {
+		t.Fatal(err)
+	}
 	runProductivity(t, newSearchCommand(), "save", "work", `timeout tag:work folder:"1. Projects"`)
 	out := runProductivity(t, newSearchCommand(), "run", "work")
 	if !strings.Contains(out, "api.md") || strings.Contains(out, "Wrong") || strings.Contains(out, "Other") {
@@ -93,7 +99,9 @@ func TestSavedSearchFiltersAndPersistence(t *testing.T) {
 func TestProjectLinksPlainMarkdownAcrossReload(t *testing.T) {
 	s := productivityFixture(t)
 	path := filepath.Join(s.VaultPath, "external.md")
-	os.WriteFile(path, []byte("# External\n"), 0600)
+	if err := os.WriteFile(path, []byte("# External\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	n, err := resolveNote(s, "external.md")
 	if err != nil {
 		t.Fatal(err)
@@ -133,7 +141,9 @@ func TestProjectLifecycle(t *testing.T) {
 		t.Fatal("project missing from dashboard")
 	}
 	sub := filepath.Join(repo, "src")
-	os.Mkdir(sub, 0700)
+	if err := os.Mkdir(sub, 0700); err != nil {
+		t.Fatal(err)
+	}
 	t.Chdir(sub)
 	root, err := repositoryRoot()
 	if err != nil {

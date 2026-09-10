@@ -50,10 +50,11 @@ var rootCmd = &cobra.Command{
 	Use:   "neuron",
 	Short: "🧠 Your second brain, from the terminal",
 	Long: `Neuron keeps your notes, tasks and project context in a local Markdown vault.
-Works alongside Obsidian. Run 'neuron' to open the keyboard-driven terminal UI.
+Works alongside Obsidian. Run 'neuron' for the terminal UI or 'neuron web' for the browser.
 
 Start here:
   neuron init                       Configure a new or existing vault
+  neuron web                        Open the local browser workspace
   neuron capture "An idea"          Save directly into Inbox
   neuron dashboard                  Review tasks, Inbox and active projects
   neuron tasks                      Find pending Markdown checkboxes
@@ -1089,7 +1090,7 @@ func brokenLinks(noteList []*notes.Note, graph *notes.Graph) []brokenLink {
 		}
 	}
 	sort.Slice(broken, func(i, j int) bool {
-		if strings.ToLower(broken[i].Source) == strings.ToLower(broken[j].Source) {
+		if strings.EqualFold(broken[i].Source, broken[j].Source) {
 			return strings.ToLower(broken[i].Target) < strings.ToLower(broken[j].Target)
 		}
 		return strings.ToLower(broken[i].Source) < strings.ToLower(broken[j].Source)
